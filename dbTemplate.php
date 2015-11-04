@@ -175,8 +175,11 @@ abstract class dbTemplate{
 		}
 		$fieldType = strtoupper($fieldDef['type']);
 		switch($fieldType){
-			case 'INT': case 'INTEGER': case 'TIMESTAMP':
+			case 'INT': case 'INTEGER':
 				$rval = intval($value);
+				break;
+			case 'TIMESTAMP':
+				$rval = date('Y-m-d H:i:s', strtotime($value));
 				break;
 			case 'DECIMAL':
 				if(array_key_exists('rounding', $fieldDef)){
@@ -322,6 +325,11 @@ abstract class dbTemplate{
 		}
 		if($flags['force_array'] && !is_array($rval)){
 			$rval = $rval == null ? array() : array($rval);
+		}
+
+		if(array_key_exists('post_fetch', $definition)){
+			$className = get_class_name();
+			$rval = $classname::$definition['post_fetch']($rval);
 		}
 		return $rval;
 	}
@@ -536,7 +544,7 @@ abstract class dbTemplate{
 			foreach($this->_keys as $keyField){
 				$queryParts[] .= "`$keyField` = '" . $this->scrubValue($this->_data[$keyField], $keyField) . "'";
 			}
-			$query .= implode(', ', $queryParts);
+			$query .= implode(' AND ', $queryParts);
 			if(!$this->_mysqli->query($query)){
 				throw new Exception("Unable to update record: " . $this->_mysqli->error);
 			}
