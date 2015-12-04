@@ -1,18 +1,54 @@
-<?php
+ <?php
 // This class is used for simplifying the handling of database records.  Any
 // record can be retreived as an object, its values manipulated, etc.  Data is
 // scrubbed in the dbTemplate class to prevent SQL injections when it gets saved.
 // tl;dr: It's a simple ORM of sorts
 /*
 TODO::::
- - ad an error checking on construct that throws an exception if an alias is
+
+ - !! Really need to re-structure the way results are handled.  I think results
+   need to be a class of their own.  They could store a 2d array of key values,
+   each row retrieveable as a record object.  That may be a bit tricky since
+   parenthetical operators can't be overloaded.  It would be nice though to be
+   able to do something like:
+
+	 $results = $table->getByCategory(1);
+	 $results->setCategory(2);
+	 $results->save();
+
+    With results being a group of records instead of a single one.
+
+    Hmm - individual records could be accessed with something like:
+
+    foreach($results->getRecords() as $record){
+    	$record->stuff();
+    }
+
+    or maybe:
+
+    while($record = $results->pop()){
+    	$record->stuff();
+    }
+
+    Actually, I'll have to consider handling that by simply extending the
+    dbTemplate class.  It might be as simple as switching $_data to be an array
+    of records containing it's current structure.  The count of $_data would be
+    the number of records handled.  Obviously functions would need to be
+    updated for that.
+
+    Hm - so yeah.  It might just be a way of changing my way of thinking of
+    what a record represents.  All of the functionality that's there now can be
+    applied the same way, but also to multiple records if we have those.
+
+ - Add an error checking on construct that throws an exception if an alias is
    identical to another field name.
 
  - ensure that all field flags are case-insensitive
 
  - move boolean fields into an array called flags?
 
- - change the maximum link field recursion depth to a defiend constant somewhere, rather than a local hard-coded one.
+ - change the maximum link field recursion depth to a defiend constant
+   somewhere, rather than a local hard-coded one.
 
  - refactor nested links to generate a single query to retrieve all related records
 
@@ -28,6 +64,7 @@ abstract class dbTemplate{
 	protected $_aliasMap;
 	protected $_isNewRecord;
 	protected $_links;
+	protected $_foreignfields;
 	protected $_mysqli;
 	static protected $mysqli;
 
@@ -39,9 +76,30 @@ abstract class dbTemplate{
 		$this->_mysqli = static::$mysqli;
 
 		$numArgs = func_num_args();
+		$args = func_get_args();
 		$numExpectedArgs = count($this->_keys);
-		if($numArgs == $numExpectedArgs){
-			$this->load(func_get_args());
+//@@@@@@@@@@@@@@@@@!!!!!!!!!!  Undocumented!  We can now accept an array of
+//keys as a single construct parameter as well.  e.g. $foo = new bar(array(1, 2));
+//That's the same as $foo = new bar(1, 2);  This is used to allow easier
+//generic handling of data requests.
+
+
+// for future consideration.  As-is, this just takes the values passed in, and
+// passes them along to "load", which assumes those are the key fields, listed
+// in order.  It may be nice to change that so that it checks the keys,
+// validates them, and then searches for a record that matches them; returning
+// that or a new record with those values assigned, depending on the
+// cirumstance.
+		if(is_array($args[0]) && $numArgs == 1){
+			if(count($args[0]) == $numExpectedArgs){
+				$this->load(array_values($args[0]));
+			}else{
+				$errMsg = get_class($this) . " construct expects $numExpectedArgs parameter" . ($numExpectedArgs == 1 ? '' : 's');
+				$errMsg .= " (" . implode(', ', $this->_keys);
+				$errMsg .= "), received " . count($args[0]) . " instead";
+			}
+		}else if($numArgs == $numExpectedArgs){
+			$this->load($args);
 		}else if($numArgs != 0){
 			$errMsg = get_class($this) . " construct expects $numExpectedArgs parameter" . ($numExpectedArgs == 1 ? '' : 's');
 			$errMsg .= " (" . implode(', ', $this->_keys);
@@ -66,11 +124,14 @@ abstract class dbTemplate{
 			'name' => '_tableName', 
 			'keys' => '_keys',
 			'fields' => '_fields',
-			'links' => '_links'
+			'links' => '_links',
+			'foreignfields' => '_foreignfields'
 		);
 		foreach($definitions as $name => $internalName){
 			if(array_key_exists($name, $className::$structure)){
 				$this->$internalName = $className::$structure[$name];
+			}else{
+				$this->$internalName = array();
 			}
 		}
         }
@@ -105,18 +166,31 @@ abstract class dbTemplate{
 	// reset this record to a blank one
 	public function reset(){
 		foreach($this->_fields as $fName => $fData){
-			$this->_data[$fName] = $fData['default'];
+			$this->_data[$fName] = array_key_exists('default', $fData) ? $fData['default'] : null;
 		}
 
 		// scrub table links and define the array if it doesn't exists
 		$newLinks = array();
-		if(is_array($this->_links)){
-			foreach($this->_links as $key => $val){
-				$newLinks[strtolower(trim($key))] = $val;
-			}
+		foreach($this->_links as $key => $val){
+			$newLinks[strtolower(trim($key))] = $val;
 		}
 		$this->_links = $newLinks;
 		$this->_isNewRecord = true;
+	}
+///////////////////////////////////////
+//@@@@@@@@@ NOT DOCUMENTED.  Delete multiple records
+	public static function deleteMultiple($records){
+		$className = get_called_class();
+		if(!is_array($records)){
+			throw new Exception("dbTemplate::deleteMultiple: first parameter should be an array of records to delete");
+		}
+
+		foreach($records as $record){
+			if(!is_object($record)){
+				$record = new $className($record);
+			}
+			$record->delete();
+		}
 	}
 
 	// delete this record from the database and reset the object
@@ -138,6 +212,11 @@ abstract class dbTemplate{
 			}
 		}
 		$this->reset();
+
+//$$$$$$$$$$$$$$$$$$$$$$$$$$$444444 Documented?  Not sure
+		if(method_exists($this, '_postdelete')){
+			$this->_postdelete();
+		}
 	}
 
 	// build our map of aliases from the initial _fields data
@@ -218,22 +297,20 @@ abstract class dbTemplate{
 
 	// handle dynamic static functions like <class>::getBy<field>(<value>);
 	public static function __callStatic($funcName, $args){
+		$className = get_called_class();
 		$rval = null;
 		if(strtolower(substr($funcName, 0, 5)) == 'getby'){
-			if(count($args) != 1){
-				throw new Exception("dbTemplate::__callStatic<$funcName>: invalid argument count (" . count($args) . ")");
-			}
-
-			if(is_array($args[0])){
-				$idList = $args[0];
+			if(count($args) > 1){
+				$valueList = $args;
+			}else if(is_array($args[0])){
+				$valueList = $args[0];
 			}else{
-				$idList = array($args[0]);
+				$valueList = array($args[0]);
 			}
 
 			$results = array();
-			foreach($idList as $id){
-				$className = get_called_class();
-				$val = $className::getByField(substr($funcName, 5), $id);
+			foreach($valueList as $value){
+				$val = $className::getByField(substr($funcName, 5), $value);
 				if($val != null){
 					$results[] = $val;
 				}
@@ -243,6 +320,43 @@ abstract class dbTemplate{
 			}else if(count($results) > 1){
 				$rval = $results;
 			}
+		}else if(strtolower(substr($funcName, 0, 11)) == 'deletewhere' && strtolower(substr($funcName, -2)) == 'in'){
+//@@@@@ not yet documented
+// accepts a single value, an array of values, or a series of arguments, each one a separate value
+// returns an array of records that matched but were not successfully deleted.
+			$fieldName = strtolower(substr($funcName, 11, -2));
+			$aliasMap = $className::getAliasMap();
+			if(!array_key_exists($fieldName, $aliasMap)){
+				throw new Exception("dbTemplate::__callStatic($funcName): invalid field name '$fieldName'");
+			}
+			if(count($args) > 1){
+				$valueList = $args;
+			}else if(is_array($args[0])){
+				$valueList = $args[0];
+			}else{
+				$valueList = array($args[0]);
+			}
+// also, this could get better performance by wrapping this for loop in an if
+// checking for the _predelete function.  If it's there, do this, if not, build
+// a single mass SQL delete.
+			foreach($valueList as $val){
+				$valResult = $className::getByField($fieldName, $val);
+				if(is_object($valResult)){
+					$valResult = array($valResult);
+				}else if(!is_array($valResult)){
+					continue;
+				}
+				foreach($valResult as $record){
+					try{
+						$record->delete();
+					}catch(Exception $e){
+						// it's possible that the delete will fail in some cases (classes with
+						// predeletes that throw an exception).  In such cases, we want to allow it to
+						// continue gracefully.
+					}
+				}
+			}
+
 		}else{
 			// Could also add a get<Field> and set<Field> function that updates one particualr
 			// field on all records.  May not be that useful though.
@@ -360,6 +474,12 @@ abstract class dbTemplate{
 		}else if(array_key_exists($name, $this->_links)){
 			$rval = $this->linkedRecords($this->_links[$name]);
 
+		// ok, perhaps a linked field?
+		}else if(array_key_exists($name, $this->_foreignfields)){
+			$def = $this->_foreignfields[$name];
+			$obj = $this->linkedRecords($this->_links[$def['link']]);
+			$rval = $obj->getField($def['field']);
+
 		// no dice
 		}else{
 			throw new Exception(get_class($this) . "::getField(): Invalid field name \"$name\"");
@@ -371,13 +491,14 @@ abstract class dbTemplate{
 	// handle various calls that use the field names (e.g. getId(), setId(), etc.)
 	public function __call($functionName, $params){
 		$func = strtolower(trim($functionName));
-
 		// if this exists in our _links array, then find the corresponding record(s).
 		if(array_key_exists($func, $this->_links)){
 			return $this->linkedRecords($this->_links[$func]);
 		}else if(array_key_exists($func, $this->_aliasMap)){
 			return $this->getField($func);
 		}else if(in_array($func, $this->_aliasMap)){
+			return $this->getField($func);
+		}else if(array_key_exists($func, $this->_foreignfields)){
 			return $this->getField($func);
 		}else{
 			$prefix = substr($func, 0, 3);
@@ -387,98 +508,100 @@ abstract class dbTemplate{
 			
 			}else if($prefix == 'set'){
 				$name = substr($func, 3);
-				$thisField = null;
-				if(array_key_exists($name, $this->_aliasMap)){
-					$thisField = $this->_aliasMap[$name];
-				}else if(array_key_exists($name, $this->_fields)){
-					$thisField = $name;
+				if(count($params) != 1){
+					throw new Exception("function " . get_class($this) . "::set$name expects a single value parameter");
 				}
-				if($thisField != null){
-					if(count($params) != 1){
-						throw new Exception("function " . get_class($this) . "::set$name expects a single value parameter");
-					}
-
-					// call the custom validator if defined.  It's expected to throw an exception if the field value is invalid
-					if(array_key_exists('validator', $this->_fields[$thisField])){
-						$this->{$this->_fields[$thisField]['validator']}($params[0]);
-					}
-					// if a custom scrubber is defined, it should return a clean version of data passed in
-					if(array_key_exists('scrubber', $this->_fields[$thisField])){
-						$params[0] = $this->{$this->_fields[$thisField]['scrubber']}($params[0]);
-					}
-
-
-					// if a custom function for handling a set on this variable is defined, then call it
-					if(array_key_exists('sethandler', $this->_fields[$thisField])){
-						// fixme... This will not handle the case where "sethandler" points to
-						// an undefined function.  It may give infinite recursion as a result.
-						return $this->{$this->_fields[$thisField]['sethandler']}($params[0]);
-					}else{
-						// validate ENUMS
-						if($this->_fields[$thisField]['type'] == 'enum'){
-							if(!in_array($params[0], $this->_fields[$thisField]['values'])){
-								throw new Exception("field $name is an ENUM and expects one of the following values: " . implode(', ', $this->_fields[$thisField]['values']));
-							}
-						}
-
-						// validate integer fields
-						if(in_array($this->_fields[$thisField]['type'], array('INT', 'INTEGER'))){
-							if(!preg_match('/^[0-9+-]*$/', $params[0])){
-								throw new Exception("field $name expects an integer value");
-							}
-						}
-
-						// validate VARCHAR with a defined length
-						if(array_key_exists('maxlength', $this->_fields[$thisField])){
-							if(strlen($params[0]) > $this->_fields[$thisField]['maxlength']){
-								throw new Exception("value '{$params[0]}' exceeds maximum field length of " . $this->_fields[$thisField]['maxlength']);
-							}
-						}
-						// handle decimal restrictions if applicable
-						if($this->_fields[$thisField]['type'] == 'DECIMAL'){
-							if(array_key_exists('decimalformat', $this->_fields[$thisField])){
-								if(strlen(intval($params[0])) > $this->_fields[$thisField]['decimalformat']['left']){
-									throw new Exception("dbTemplate::$functionName: value exceeds left digit limit of " . $this->_fields[$thisField]['decimalformat']['left']);
-								}
-								$params[0] = round(floatval($params[0]), $this->_fields[$thisField]['decimalformat']['right']);
-							}
-						}
-
-						// handle absolute values
-						if(array_key_exists('unsigned', $this->_fields[$thisField])){
-							if(is_numeric($params[0])){
-								$params[0] = abs($params[0]);
-							}
-						}
-
-						// hey!  If we made it this far, then the value seems valid and we can store it
-						$this->_data[$thisField] = $params[0];
-						return $params[0];
-					}
-				}else if(array_key_exists($name, $this->_links)){
-					if(count($params) != 1){
-						throw new Exception("dbTemplate::$functionName: expecting one parameter of dbTemplate type.  Received " . count($params) . " objects");
-					}
-
-					$objType = gettype($params[0]);
-					if($objType != 'object'){
-						throw new Exception("dbTemplate::$functionName: expecting record of class '" . $this->_links[$name]['class'] . "', instead received one of type $objType");
-					}
-					$objClass = get_class($params[0]);
-					if($objClass != $this->_links[$name]['class']){
-						throw new Exception("dbTemplate::$functionName: expecting record of class '" . $this->_links[$name]['class'] . "', instead received one of type $objClass");
-					}
-
-					// no exception?  Ok, we can assign the necessary link fields.
-					foreach($this->_links[$name]['linkfields'] as $myField => $theirField){
-						$this->_data[$myField] = $params[0]->{'get' . $theirField}();
-					}
-				}else{
-					throw new Exception(get_class($this) . "::set$name: Invalid field name \"$name\"");
-				}
+				$this->setField($name, $params[0]);
 			}else{
 				throw new Exception("dbTemplate::__call: call to non-existant member function: " . $functionName);
 			}
+		}
+	}
+
+// @@@@@@@@@@@@@@@@@@@@ !!! Not yet documented.  This was previously just part of the __call function.  Assigns the specified value to the specified field.
+	public function setField($field, $value){
+		$thisField = null;
+		if(array_key_exists($field, $this->_aliasMap)){
+			$thisField = $this->_aliasMap[$field];
+		}else if(array_key_exists($field, $this->_fields)){
+			$thisField = $field;
+		}
+		if($thisField != null){
+
+			// call the custom validator if defined.  It's expected to throw an exception if the field value is invalid
+			if(array_key_exists('validator', $this->_fields[$thisField])){
+				$this->{$this->_fields[$thisField]['validator']}($value);
+			}
+			// if a custom scrubber is defined, it should return a clean version of data passed in
+			if(array_key_exists('scrubber', $this->_fields[$thisField])){
+				$value = $this->{$this->_fields[$thisField]['scrubber']}($value);
+			}
+
+
+			// if a custom function for handling a set on this variable is defined, then call it
+			if(array_key_exists('sethandler', $this->_fields[$thisField])){
+				// fixme... This will not handle the case where "sethandler" points to
+				// an undefined function.  It may give infinite recursion as a result.
+				return $this->{$this->_fields[$thisField]['sethandler']}($value);
+			}else{
+				// validate ENUMS
+				if($this->_fields[$thisField]['type'] == 'enum'){
+					if(!in_array($value, $this->_fields[$thisField]['values'])){
+						throw new Exception("field $field is an ENUM and expects one of the following values: " . implode(', ', $this->_fields[$thisField]['values']));
+					}
+				}
+
+				// validate integer fields
+				if(in_array($this->_fields[$thisField]['type'], array('INT', 'INTEGER'))){
+					if(!preg_match('/^[0-9+-]*$/', $value)){
+						throw new Exception("field $field expects an integer value");
+					}
+				}
+
+				// validate VARCHAR with a defined length
+				if(array_key_exists('maxlength', $this->_fields[$thisField])){
+					if(strlen($value) > $this->_fields[$thisField]['maxlength']){
+						throw new Exception("value '{$value}' exceeds maximum field length of " . $this->_fields[$thisField]['maxlength']);
+					}
+				}
+				// handle decimal restrictions if applicable
+				if($this->_fields[$thisField]['type'] == 'DECIMAL'){
+					if(array_key_exists('decimalformat', $this->_fields[$thisField])){
+						if(strlen(intval($value)) > $this->_fields[$thisField]['decimalformat']['left']){
+							throw new Exception("dbTemplate::setField: value exceeds left digit limit of " . $this->_fields[$thisField]['decimalformat']['left']);
+						}
+						$value = round(floatval($value), $this->_fields[$thisField]['decimalformat']['right']);
+					}
+				}
+
+				// handle absolute values
+				if(array_key_exists('unsigned', $this->_fields[$thisField])){
+					if(is_numeric($value)){
+						$value = abs($value);
+					}
+				}
+
+				// hey!  If we made it this far, then the value seems valid and we can store it
+				$this->_data[$thisField] = $value;
+				return $value;
+			}
+		}else if(array_key_exists($field, $this->_links)){
+
+			$objType = gettype($value);
+			if($objType != 'object'){
+				throw new Exception("dbTemplate::setField: expecting record of class '" . $this->_links[$field]['class'] . "', instead received one of type $objType");
+			}
+			$objClass = get_class($value);
+			if($objClass != $this->_links[$field]['class']){
+				throw new Exception("dbTemplate::setField: expecting record of class '" . $this->_links[$field]['class'] . "', instead received one of type $objClass");
+			}
+
+			// no exception?  Ok, we can assign the necessary link fields.
+			foreach($this->_links[$field]['linkfields'] as $myField => $theirField){
+				$this->_data[$myField] = $value->{'get' . $theirField}();
+			}
+		}else{
+			throw new Exception(get_class($this) . "::set$field: Invalid field name \"$field\"");
 		}
 	}
 
@@ -691,6 +814,50 @@ abstract class dbTemplate{
 		return $rval;
 	}
 
+//@@@@@@@@@@@@@ not yet documented
+	// Returns an array of arrays containing the field values of every record in
+	// the table.  Field names can be passed in either as multiple arguments or as
+	// an array (or even multiple arrays) of strings.
+	public static function retrieveData(){
+		$className = get_called_class();
+		$fields = array();
+		$aliasMap = $className::getAliasMap();
+
+		if(func_num_args() == 0){
+			$fields = array_keys($aliasMap);
+		}else{
+			$argList = func_get_args();
+			for($n = 0; $n < count($argList); $n++){
+				$name = $argList[$n];
+				if(is_array($name)){
+					// this allows us to pass in an array of fields (or several arrays even),
+					// rather than a collection of individual string arguments.  Much more useful
+					// when the desired fields are not hard-coded.
+					$argList = array_merge($argList, $name);
+					continue;
+				}
+				$fieldName = strtolower(trim($name));
+				if(!array_key_exists($fieldName, $aliasMap)){
+					throw new Exception("dbTemplate::retrieveAll(<fieldnames>): invalid field name '$fieldName'");
+				}
+				$fields[] = $aliasMap[$fieldName];
+			}
+
+		}
+		$query = "SELECT ";
+		if(count($fields)){
+			$query .= "`" . implode('`, `', $fields) . "` ";
+		}
+		$query .= "FROM `" . $className::$structure['name'] . "`";
+
+		$q = dbTemplate::$mysqli->query($query);
+		$rval = [];
+		while($row = $q->fetch_assoc()){
+			$rval[] = $row;
+		}
+		return $rval;
+	}
+
 	// returns an array of objects representing each record in the table.
 	public static function retrieveAll(){
 		$className = get_called_class();
@@ -797,5 +964,52 @@ abstract class dbTemplate{
 			throw new Exception('dbTemplate::__call::default: weird result: num_rows = ' . $results->num_rows);
 		}
 		return $rval;
+	}
+
+//@@@@@@@@@@@@@ NOT DOCUMENTED.  Import $filename as a CSV file, inserting the records into this table.
+	public static function importCSV($filename){
+		$keyList = array();
+		$className = get_called_class();
+		$aliasMap = $className::getAliasMap();
+		$fin = fopen($filename, "r");
+		if(!$fin){
+			throw new Exception("dbTemplate::importCSV: Unable to open specified file: $filename");
+		}
+
+		$headers = fgetcsv($fin);
+		for($n = 0; $n < count($headers); $n++){
+			$headers[$n] = trim(strtolower($headers[$n]));
+			$field = $headers[$n];
+			if(!array_key_exists($field, $className::$structure['fields'])){
+				if(array_key_exists($field, $aliasMap)){
+					$field = $aliasMap[$field];
+					$headers[$n] = $field;
+				}else{
+					throw new Exception("dbTemplate::importCSV: Invalid field name \"$field\"");
+				}
+			}
+		}
+		$row = fgetcsv($fin);
+		$keys = $className::$structure['keys'];
+		while(!feof($fin)){
+			// create the record
+			$record = new $className();
+			for($n = 0 ; $n < count($headers); $n++){
+				$record->setField($headers[$n], $row[$n]);
+			}
+			$record->save();
+
+			// get the values for each key field to return in our record list
+			$newResult = array();
+			foreach($keys as $field){
+				$newResult[$field] = $record->getField($field);
+			}
+			$keyList[] = $newResult;
+
+			// grab the next CSV row
+			$row = fgetcsv($fin);
+		}
+
+		return $keyList;
 	}
 }
