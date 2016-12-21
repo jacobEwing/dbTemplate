@@ -6,6 +6,10 @@
 /*
 TODO::::
 
+ - create a static create() function, which accepts either a series of values
+   as  individual arguments, or as an array.  It creates a new record,
+   assigning those values. 
+
  - !! Really need to re-structure the way results are handled.  I think results
    need to be a class of their own.  They could store a 2d array of key values,
    each row retrieveable as a record object.  That may be a bit tricky since

@@ -1,0 +1,1064 @@
+		<div id="frontpage" class="section">
+			<h2>Introduction</h2>
+			<p>
+			dbTemplate is a lightweight ORM (Object Relational Model) library in PHP, designed to work on a LAMP
+			(Linux, Apache, MySQL, PHP) platform.  dbTemplate is open source, licensed under <a href="http://www.gnu.org/licenses/gpl-3.0.en.html">GNU GPL 3.0</a>.
+			</p>
+			<p style="font-size: 120%; font-weight: bold">Download from gitHub at 
+			<a href="https://github.com/jacobEwing/dbTemplate">https://github.com/jacobEwing/dbTemplate</a>.
+			</p>
+
+			<p>
+			Originally built as a simple class to represent single records, it has expanded
+			over time to handle relationships and table-wide operations as well, and grown
+			to the point that it seems worth proffering to the public. This page provides a
+			breakdown of its features and limitations.
+			</p>
+
+			<p>
+				The entire system is built on a single abstract class, "dbTemplate".  Any
+				extension of this class is representative of a single table, whereas objects of
+				that extension represent the records.  Intuitively then, static functions are
+				used for table operations, whereas member functions apply to individual
+				records.  
+			</p>
+			<p>
+				For example, a class called "user", representing a table of the same name and containing a key field of "id", could be used like this:
+				<div class="code">$usr = user::getById(1);</div>
+				which searches the user table for a record with an id of 1, returning an object containing its data.
+			</p><p>
+				Records can also be fetched by passing values for the primary keys into the
+				class construct.  If "id" is the table's primary key, then that same record
+				could also be retrieved like this:
+				<div class="code">$usr = new user(1);</div>
+			</p>
+			<p>
+				Elements of that record can then be manipulated with the returned object:
+				<div class="code">$name = $usr-&gt;getName();<br/>$usr-&gt;setWeight(123);<br/>$usr-&gt;save();</div>
+
+			</p>
+		</div>
+
+		<div id="quickstart" class="section">
+			<h2>Quick Start</h2>
+			<p>
+				A basic working implementation can be put together in just a few basic steps:
+				<ol>
+					<li>"dbTemplate.php" needs to be included</li>
+					<li>The database connection needs to be established using dbTemplate::connect</li>
+					<li>A class for each database table in use needs to be defined</li>
+				</ol>
+			</p>
+			<p> For example, a table called "products" with the following fields:</p>
+			<table class="definitionList">
+				<tr>
+					<th>id</th><td>INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY</td>
+				</tr><tr>
+					<th>name</th><td>VARCHAR(64) NOT NULL</td>
+				</tr><tr>
+					<th>price</th><td>DECIMAL(10, 2) DEFAULT 0</td>
+				</tr><tr>
+					<th>quantity</th><td>INT UNSIGNED DEFAULT 0</td>
+				</tr>
+			</table>
+			<p>would be ready for use with this code snippet:</p>
+			<div class="code">
+include "dbTemplate.php";
+dbTemplate::connect($server_name, $username, $password, $database_name);
+
+class product extends dbTemplate{
+	protected static $structure = array(
+		'name' =&gt; 'products',
+		'keys' =&gt; array('id'),
+		'fields' =&gt; array(
+			'id' =&gt; array(
+				'type' =&gt; 'INTEGER',
+				'unsigned' =&gt; true,
+				'notnull' =&gt; true,
+				'auto' =&gt; true
+			),
+			'name' =&gt; array(
+				'type' =&gt; 'VARCHAR(64)',
+				'notnull' =&gt; true
+			),
+			'price' =&gt; array(
+				'type' =&gt; 'DECIMAL(10, 2)',
+				'default =&gt; 0
+			),
+			'quantity' =&gt; array(
+				'type' =&gt; 'INTEGER',
+				'unsigned' =&gt; true,
+				'default' =&gt; 0
+			)
+		)
+	);
+}
+			</div>
+			Running through the above code:
+			<div class="textblock">
+				<h3>dbTemplate::connect($server_name, $username, $password, $database_name);</h3>
+				Open a connection to the database with these parameters:
+				<ul>
+					<li>host name, e.g. "localhost"</li>
+					<li>user name</li>
+					<li>password</li>
+					<li>database name</li>
+				</ul>
+				<p>
+				</p>
+				This creates a protected static mysqli object in dbTemplate, which is used by all extensions of it.
+				<p>
+				One may notice that this implies one of the limitations
+				of this system.  It can only make use of one database.
+				</p>
+			</div>
+
+			<div class="textblock">
+				<h3>class product extends dbTemplate</h3>
+				Create a class called 'product' to represent the products table.
+				Note that the class name does not have to match the table name.
+			</div>
+
+			<div class="textblock">
+				<h3>protected static $structure = array(...);</h3>
+				The $structure variable is the only required definition in the class.  It defines the table that the class represents, and the following keys must be defined:
+				<ul>
+					<li><strong>name</strong><br/>The actual name of the database table.</li>
+					<li><strong>keys</strong><br/>An array of the names of the key fields in the table.  For example, a link table with key fields such as "users_id" and "permissions_id", would be have the keys defined as an array containing both of those names.</li>
+					<li><strong>fields</strong><br/>
+					An array defining the actual fields.  The array keys are the names of the fields themselves, and the values are arrays of parameters defining the field.
+					</li>
+				</ul>
+			</div>
+			
+		</div>
+
+		<div id="structure" class="section">
+			<h2>The $structure Array</h2>
+			<p>$structure is a protected static array that must be defined in any class
+			extending dbTemplate.  It is used to describe the table represented by the
+			class.  It has the following array keys:
+			<div class="textblock">
+				<h3>name</h3>
+				The name of the table as defined in the database.  This is (obviously) a required key.
+				<div class="code">'name' =&gt; 'products'</div>
+			</div>
+
+			<div class="textblock">
+				<h3>keys</h3>
+				An array containing the primary table key of this table.  Also required.
+				<div class="code">'keys' =&gt; array('id')</div>
+				<div class="code">'keys' =&gt; array('users_id', 'permissions_id')</div>
+			</div>
+
+			<div class="textblock">
+				<h3>fields</h3>
+				<p>
+					Also required.  This is the meat of the table definition, describing the fields in the table.
+					Note that it is not necessarily required that all fields be listed, but strongly recommended.
+				</p>
+				<p>
+					The value assigned to this index should be an array, the keys of
+					which are the field names as defined in the database, and the values of which
+					are arrays describing the field.  Take the following example:
+				</p>
+				<div class="code">
+protected static $structure = array(
+	'name' =&gt; 'products',
+	'keys' =&gt; array('id'),
+	'fields' =&gt; array(
+		'id' =&gt; array(
+			'type' =&gt; 'INTEGER',
+			'unsigned' =&gt; true,
+			'notnull' =&gt; true,
+			'auto' =&gt; true
+		),
+		'name' =&gt; array(
+			'type' =&gt; 'VARCHAR(64)',
+			'notnull' =&gt; true
+		),
+		'price' =&gt; array(
+			'type' =&gt; 'DECIMAL(10, 2)',
+			'default =&gt; 0
+		),
+		'quantity' =&gt; array(
+			'type' =&gt; 'INTEGER',
+			'unsigned' =&gt; true,
+			'default' =&gt; 0
+		)
+	)
+);
+				</div>
+				<p>
+					This code describes the "products" table as having four fields:
+					<ul>
+						<li>"id" is described as INT UNSIGNED NOT NULL AUTO_INCREMENT</li>
+						<li>"name" is a VARCHAR(64) NOT NULL</li>
+						<li>"price" is a DECIMAL(10, 2) DEFAULT 0</li>
+						<li>"quantity is an UNSIGNED INT DEFAULT 0</li>
+					</ul>
+				</p>
+				<p>In the array defining any given field, the following options are available:</p>
+				<div class="indent">
+					<h4>
+					<span style="float:right; font-weight:normal; color:#000"><em>(required)</em></span>
+					type</h4>
+					<div class="indent">
+						Defines the data type of the field.  Valid values are:
+						<ul>
+							<li>
+								<strong>VARCHAR</strong>, <strong>VARCHAR</strong><em>(&lt;maxlength&gt;)</em>
+								<p>A VARCHAR field of the specified length.  If no length is specified, then
+								none will be enforced by the object.  In that case, if a record is saved, mysql
+								will truncate the value.
+								</p>
+								<div class="code">
+'name' =&gt; array(
+	'type' =&gt; 'VARCHAR(64)'
+),
+'email' =&gt; array(
+	'type' =&gt; 'VARCHAR'
+)
+								</div>
+							</li><li>
+								<strong>INT</strong>, <strong>INTEGER</strong>
+								<p>An integer</p>
+								<div class="code">
+'id' =&gt; array(
+	'type' =&gt; 'INTEGER'
+),
+'tally' =&gt; array(
+	'type' =&gt; 'INT'
+)
+								</div>
+							</li><li>
+								<strong>FLOAT</strong>
+								<p>A floating point value</p>
+								<div class="code">
+'slope' =&gt; array(
+	'type' =&gt; 'FLOAT'
+)
+								</div>
+							</li><li>
+								<strong>DECIMAL</strong>, <strong>DECIMAL</strong><em>(&lt;length, decimalplaces&gt;)</em>
+								<p>Actually stored in object as a float, it is rounded and stored as a decimal
+								when the record is saved, but only if the <em>length</em> and
+								<em>decimalpoint</em> parameters are defined.  If they are not defined, then
+								the field is treated as a float within the object.
+								</p>
+								<div class="code">
+'balance' =&gt; array(
+	'type' =&gt; 'DECIMAL(10, 2)'
+)
+'credit' =&gt; array(
+	'type' =&gt; 'DECIMAL'
+)
+								</div>
+							</li><li>
+								<strong>BOOLEAN</strong>
+								<p>A boolean value.  When the record is saved, the value is converted with a
+								ternary comparison operator, and saved as 1 if the result is true, or 0
+								otherwise.
+								</p>
+								<div class="code">
+'active' =&gt; array(
+	'type' =&gt; 'BOOLEAN'
+)
+								</div>
+							</li><li>
+								<strong>ENUM</strong>
+								<p>An enumeration operator, where the allowed values can be any of a specified set.  In this case, an additional parameter must be included in the field definition with the key <strong>values</strong>, listing the allowed values.
+								</p>
+								<div class="code">
+'shirt_size' =&gt; array(
+	'type' =&gt; 'ENUM',
+	'values' =&gt; array(
+		'small',
+		'medium',
+		'large'
+	)
+)
+								</div>
+							</li><li>
+								<strong>DATE</strong>, <strong>TIME</strong>, <strong>DATETIME</strong>
+								<p>Although these can all be set as the type, they are actually treated the same way as a VARCHAR.  Any database errors encountered on an insert or select are thrown back as exceptions.</p>
+								<div class="code">
+'duedate' =&gt; array(
+	'type' =&gt; 'DATE'
+),
+'produced' =&gt; array(
+	'type' =&gt; 'TIME'
+),
+'arrived' =&gt; array(
+	'type' =&gt; 'DATETIME'
+)
+								</div>
+								</p>
+							</li><li>
+								<strong>TIMESTAMP</strong>
+								<p>Like the DATE and TIME fields above, TIMESTAMP is left largely unscrubbed.  It is treated the same way as an INTEGER, and invalid values are handled by the database</p>
+								</p>
+								<div class="code">
+'logged' =&gt; array(
+	'type' =&gt; 'TIMESTAMP'
+)
+								</div>
+							</li>
+								
+						</ul>
+					</div>
+				</div>
+
+				<div class="indent">
+					<h4>default</h4>
+					<p>The default value that will be assigned to the field when the object is created.
+						<div class="code">
+'frequency' =&gt; array(
+	'type' =&gt; 'DECIMAL(10, 2)',
+	'default' =&gt; 0.00
+)
+						</div>
+						If the value of 'default' is null, then an actual NULL value will be assigned in the database.
+						<div class="code">
+'name' =&gt; array(
+	'type' =&gt; 'VARCHAR(64)',
+	'default' =&gt; null
+)
+						</div>
+					</p>
+				</div>
+
+				<div class="indent">
+					<h4>auto</h4>
+					<p>Flags a field as being automatically assigned by the database.  When a
+					record is saved, that default value will be copied back from the database and
+					assigned to the object's field.</p>
+					<p>The following is an example of the "auto" flag in use.</p>
+					<div class="code">
+class user extends dbTemplate{
+	protected static $structure = array(
+		'name' =&gt; 'users',
+		'keys' =&gt; array('id'),
+		'fields' =&gt; array(
+			'id' =&gt; array(
+				'type' =&gt; 'INTEGER',
+				'auto' =&gt; true 
+			),
+			'email' =&gt; array(
+				'type' =&gt; 'VARCHAR(256)',
+				'default' =&gt; null
+			)
+		)
+	);
+}
+					</div>
+					<p>In the class above, a table called 'users' is described as having two fields,
+					id and email.  The id field is flagged as being automatically assigned (in this
+					example, it would likely be a field with the AUTO_INCREMENT flag).</p>
+					<p>If a user object is created and saved, the id field will be assigned the
+					value provided by the database</p>
+					<div class="code">
+$u = new user();
+echo $u-&gt;getId(); // returns 0
+$u-&gt;setEmail('foo@bar.com');
+$u-&gt;save();
+echo $u-&gt;getId(); // returns the value provided by the database, e.g. 1
+					</div>
+				</div>
+
+				<div class="indent">
+					<h4>alias</h4>
+					<p>An alias which can be used to refer to the field</p>
+					<div class="code">
+'other_email_address' =&gt; array(
+	'type' =&gt; 'VARCHAR(256)',
+	'default' =&gt; null,
+	'alias' =&gt; 'otherEmail'
+)
+					</div>
+					<p>Note that although this allows fields to be referred to by the given alias,
+					they can still be refered to  by the actual field name.  As this implies, an
+					alias can not be assigned which is also the name of another field.</p>
+
+					<p>Both of the lines below are valid with the example given above.</p>
+					<div class="code">
+$u-&gt;setOtherEmail('bar@foo.com');
+$u-&gt;setOther_email_address('bar@foo.com');
+					</div>
+				</div>
+
+				<div class="indent">
+					<h4>unsigned</h4>
+					<p>A boolean flag which, if evaluated as true, marks a numeric field as being
+					"unsigned".  Values are set to their absolute value upon assignment</p>
+					<div class="code">
+'height' =&gt; array(
+	'type' =&gt; 'INTEGER',
+	'unsigned' =&gt; true
+)
+					</div>
+					<div class="code">
+$foo-&gt;setHeight(11); // value is set to 11
+$foo-&gt;setHeight(-3); // value is set to 3
+					</div>
+				</div>
+
+				<div class="indent">
+					<h4>notnull</h4>
+					<p>A boolean flag which, if evaluated as true, means that the field can not be
+					saved with a null value.  An exception will be thrown upon saving if the value
+					is null.</p>
+					<div class="code">
+'email' =&gt; array(
+	'type' =&gt; 'VARCHAR(256)',
+	'notnull' =&gt; true
+)
+					</div>
+				</div>
+
+				<div class="indent">
+					<h4>maxlength</h4>
+					<p>An alternative method of specifying a maximum length for a field.  This is equivalent to specifying a maximum length in a VARCHAR field, but can be applied to any string field.</p>
+					<div class="code">
+'email' =&gt; array(
+	'type' =&gt; 'VARCHAR(256)'
+)
+					</div>
+					Is equivalent to:
+					<div class="code">
+'email' =&gt; array(
+	'type' =&gt; 'VARCHAR',
+	'maxlength' =&gt; 256
+)
+					</div>
+					But can also be applied to other types of fields:
+					<div class="code">
+'email' =&gt; array(
+	'type' =&gt; 'TEXT',
+	'maxlength' =&gt; 256
+)
+					</div>
+				</div>
+
+				<div class="indent">
+					<h4>validator</h4>
+					<p>The "validator" parameter should have a value that is the name of a member function that validates a value upon assignment to the field.  The expected behaviour is:</p>
+					<ul>
+						<li>On failure: (invalid value)<br/>
+						An exception should be thrown.
+						</li>
+						<li>On success: (valid value)<br/>
+						Nothing happens.  The function should complete passively.
+						</li>
+					</ul>
+					<p>The value assigned is the name of the member function:</p>
+					<div class="code">
+'email' =&gt; array(
+	'type' =&gt; 'VARCHAR(256)',
+	'validator' =&gt; '_validate_email'
+)
+					</div>
+					<p>And the function itself would be designed to throw an exception if the value is not valid:</p>
+					<div class="code">
+private function _validate_email($email){
+	if(!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+		throw new Exception("user::setEmail(): invalid e-mail address, '$email'");
+	}
+}
+					</div>
+				</div>
+
+				<div class="indent">
+					<h4>scrubber</h4>
+					<p>Like the "validator" parameter, "scrubber" also contains the name of member
+					function that is called upon value assignment.  It is used for massaging the value
+					before assigning it to the object.  It should expect the value itself as the
+					sole parameter, and return the scrubbed value.</p>
+
+					<div class="code">
+'product_name' =&gt; array(
+	'type' =&gt; 'VARCHAR(64)',
+	'scrubber' =&gt; '_scrub_product_name'
+)
+					</div>
+
+					<div class="code">
+private function _scrub_product_name($name){
+	return trim(strtolower($name));
+}
+					</div>
+				</div>
+
+
+
+			</div>
+			<div class="textblock">
+				<h3>links</h3>
+				<p>This is an optional key in the table structure definition.  The index
+				"links" points to an array of parameters that describe field links between the
+				table being defined and other ones.<p>
+
+				<p>Using this, related objects or groups thereof can be referred to by a call
+				to a custom member function of the object itself. e.g.</p>
+				<div class="code">
+function showCart($cartId){
+	$total = 0;
+	$cart = new shoppingCart($cartId);
+	foreach($cart-&gt;items() as $item){
+		echo $item-&gt;getName() . ": " . $item-&gt;getPrice() . "\n";
+		$total += $item-&gt;getPrice();
+	}
+	echo "Cart total: " . $total . "\n";
+}
+				</div>
+				<p>When a link is followed, the return value will vary depending on the number of records matched.
+				<ul>
+					<li>null is returned if no linked records are found.</li>
+					<li>A dbTemplate object of the linked record will be returned if only one record is found.</li>
+					<li>An array of dbTemplate objects will be returned if if multiple records are found.</li>
+				</ul>
+				</p>
+				<p>Below is the full available structure of the links array.  Note that the
+				only required keys for each link are "class" and "linkfields".</p>
+				<div class="code">
+'links' =&gt; array(
+	'<em>&lt;link name&gt;</em>' =&gt; array(
+		'class' =&gt; '<em>&lt;dbTemplate class name&gt;</em>'
+		'linkfields' =&gt; array(
+			'<em>&lt;local field1&gt;</em>' =&gt; '<em>&lt;external field 1&gt;</em>',
+			'<em>&lt;local field2&gt;</em>' =&gt; '<em>&lt;external field 2&gt;</em>',
+			'<em>&lt;local field3&gt;</em>' =&gt; '<em>&lt;external field 3&gt;</em>',
+			 ...
+		),
+		'flags' =&gt; array(
+			<em>&lt;flag name&gt;</em>, <em>&lt;flag name&gt;</em>, ...
+		),
+		'childlink' =&gt; array(
+			...
+		)
+	),
+	'<em>&lt;another link name&gt;</em>' =&gt; array(
+		...
+	),
+	...
+)
+				</div>
+
+				<p>The 'links' array can contain any number of link definitions.  Each link is
+				defined with as array, which as a minimum must contain the keys 'class' and
+				'linkfields'.  The names used for the links are the keys of the 'links' array.</p>
+				<p>The available options are:</p>
+				<div clas="indent">
+					<h4>class<span style="float:right">(required)</span></h4>
+					<p><em><strong>class</strong></em> is the classname of the objects that this
+					link refers to.  For example, if a table called "cart_items" exists, and is
+					wrapped in a dbTemplate extension called "cartItems", then this field should
+					have the value "cartItems".</p>
+
+					<h4>linkfields<span style="float:right">(required)</span></h4>
+					<p>The <strong><em>links</em></strong> parameter is an array listing the fields
+					that connect the records.  The keys of the array should be field names in the
+					table under which the link is defined, and the values are field names in table
+					to which it links.</p>
+					<p>For example, in a table with a field called "users_id", which should link to
+					the "id" field in the other table, 'linkfields' would be defined as:</p>
+					<div class="code">
+'linkfields' =&gt; array(
+	'users_id' =&gt; 'id'
+)
+					</div>
+					<p>Multiple fields can be used for the link, in which case they must all match to link to any record.
+					<div class="code">
+'linkfields' =&gt; array(
+	'fairyear' =&gt; 'year',
+	'fairtype' =&gt; 'category'
+)
+					</div>
+					<p>The resulting query would be along the lines of
+						<div class="code">
+SELECT * FROM `&lt;table&gt;`
+WHERE `year` = '&lt;fairyear value&gt;' 
+AND `category` = '&lt;fairtype value&gt;'
+						</div>
+					</p>
+
+					<p>Links are always one-way.  The key being the local field and the value being
+					the remote field.  To have the inverse relationship, the link can simply be
+					defined in the other class. As in the following example:</p>
+					<div class="code">
+class user extends dbTemplate{
+	protected static $structure = array(
+		'name' =&gt; 'users',
+		'keys' =&gt; array('id'),
+		'fields' =&gt; array(
+			'id' =&gt; array(
+				'type' =&gt; 'INTEGER',
+				'auto' =&gt; true 
+			)
+			'group_id' =&gt; array(
+				'type' =&gt; 'INTEGER',
+				'default' =&gt; null, 
+			)
+		),
+		'links' =&gt; array(
+			'group' =&gt; array(
+				'class' =&gt; 'group',
+				'linkfields' =&gt; array(
+					'group_id' =&gt; 'id'
+				)
+			)
+		)
+	)
+}
+
+class group extends dbTemplate{
+	protected static $structure = array(
+		'name' =&gt; 'groups',
+		'keys' =&gt; array('id'),
+		'fields' =&gt; array(
+			'id' =&gt; array(
+				'type' =&gt; 'INTEGER',
+				'auto' =&gt; true 
+			)
+		),
+		'links' =&gt; array(
+			'users' =&gt; array(
+				'class' =&gt; 'user',
+				'linkfields' =&gt; array(
+					'id' =&gt; 'group_id'
+				)
+			)
+		)
+	)
+}
+					</div>
+					<p>This describes two tables, 'users' and 'groups'.  The users table has a groups_id field that points to the id in groups table.</p>
+					<p>In the user object, there is a link defined, pointing to the group in which the user belongs:
+						<div class="code">
+$u = new user($uid);
+$g = $u-&gt;group();
+						</div>
+						If the user object $u has a valid group_id value, then this will return a "group" object.  Using that group object, we can then say:
+						<div class="code">
+$members = $g-&gt;users();
+						</div>
+						Which return an array of all user objects belonging to that group.
+					</p>
+
+					<h4>flags</h4>
+					<p>Additional boolean parameters can be passed in as values in the
+					<strong><em>flags</em></strong> array.  Available flags are:</p>
+					<table class="definitionList">
+						<tr><th>force_array</th><td>
+							Forces the returned value to be an array, regardless of the related record
+							count.  As mentioned earlier, the type of returned value will depend on the
+							number of records matched.  With this flag included, the response will always
+							be an array; an empty one if no records are matched.
+						</td></tr>
+						<tr><th>allow_duplicates</th><td>
+							It is possible for a link to be defined in such a way that there multiple links
+							between two records.  By default, if more than one link occurs, only one
+							instance of the related object will be returned.  If this flag is present, then
+							multiple instances can be returned.
+						</td></tr>
+					</table>
+					<p>Flags should be passed in as values, not array keys.  For example:</p>
+					<div class="code">
+'flags' =&gt; array(
+	'force_array',
+	'allow_duplicates'
+)
+					</div>
+
+					<h4>childlink</h4>
+					<p>The <strong><em>childlink</em></strong> key is used for creating recursive
+					links.  This becomes very useful when retrieving data connected by a link
+					table.  The value of the 'childlink' element should be another link definition,
+					with exactly the same structure and parameter options.</p>
+
+					<p>On the back end, this is done by finding all records that match defined
+					link, and applying the child link definition to each of those.  The parent
+					objects are then discarded, and the resulting child records returned.</p>
+
+					<p>Note that this is done algorithmically in PHP, and can be done much more
+					efficiently using a single direct SQL query.</p>
+
+					<p>For example, one might have a class called <em>users</em>, and another
+					called <em>group</em>, with a link between them called <em>userGroupsLink</em>.
+					If the userGroupsLink has the fields <em>user_id</em> and <em>group_id</em>,
+					each pointing to an <em>id</em> field in the corresponding table, then the
+					following link definition will return list of all groups that a user belongs
+					to:</p>
+
+					<div class="code">
+'groups' =&gt; array(
+	'class' =&gt; 'userGroupsLink',
+	'linkfields' =&gt; array(
+		'id' =&gt; 'users_id'
+	),
+	'childlink' =&gt; array(
+		'class' =&gt; 'group',
+		'linkfields' =&gt; array(
+			'groups_id' =&gt; 'id'
+		)
+	),
+	'flags' =&gt; array(
+		'force_array'
+	)
+)
+					</div>
+					<p>With that definition in place, an object of the user class could return a
+					list of all groups that it belongs to with just one line:</p>
+					<div class="code">
+$groupList = $usr-&gt;groups();
+					</div>
+					<p>Similarily, the inverse link would be possible, producing a list of all
+					users belonging to a given group:</p>
+					<div class="code">
+'users' =&gt; array(
+	'class' =&gt; 'userGroupsLink',
+	'linkfields' =&gt; array(
+		'id' =&gt; 'groups_id'
+	),
+	'childlink' =&gt; array(
+		'class' =&gt; 'user',
+		'linkfields' =&gt; array(
+			'users_id' =&gt; 'id'
+		)
+	),
+	'flags' =&gt; array(
+		'force_array'
+	)
+)
+					</div>
+					<p>Allowing all users in a group to be retrieved with just one line:</p>
+					<div class="code">
+$userList = $group-&gt;users();				
+					</div>
+
+				</div>
+			</div>
+		</div>
+
+		<div id="staticfunctions" class="section">
+			<h2>Static Functions</h2>
+			<h3>connect($host, $user, $password, $database)</h3>
+			<div class="indent">
+				Open a data base connection.
+				<table class="definitionList">
+					<tr>
+						<th>$host</th>
+						<td>The address of the server to connect to.  e.g. "localhost", "db.blah.com", etc.</td>
+					</tr><tr>
+						<th>$user</th>
+						<td>The username to authenticate with</td>
+					</tr><tr>
+						<th>$password</th>
+						<td>The password to authenticate with</td>
+					</tr><tr>
+						<th>$database</th>
+						<td>The name of the database to connect to.</td>
+					</tr>
+				</table>
+				<p>It is important to note that only one database can be used with this system.
+				No plans currently exist to allow multiple database connections.</p>
+			</div>
+
+			<h3>scrubValue($value, $fieldName)</h3>
+			<div class="indent">
+				Scrub the specified value, making it safe for an INSERT.  This is called
+				automatically for each field when a record is saved.
+			</div>
+
+			<h3>getBy&lt;field name&gt;($value)</h3>
+			<div class="indent">
+				<p>One of the features of this class is that it allows dynamic function names
+				based on the fields and links defined.  Any function that is the name of a
+				field with a "getBy" prefix will return any records in which that field matches
+				the specified value.</p>
+
+				<p>An example of this is a table storing records of monetary transactions, each
+				record containing a field called "accountNumber".  The following line will
+				retrieve all records tied to a particular account number:</p>
+				<div class="code">
+transactions::getByAccountNumber($accNumber);
+				</div>
+				<p>Like table links, the type of return value will depend on the quantity of records:</p>
+				<table class="definitionList">
+					<thead>
+						<tr>
+							<th># records</th>
+							<th>return value</th>
+						</tr>
+					</thead>
+					<tbody>
+						<tr>
+							<td>0</td><td>null</td>
+						</tr><tr>
+							<td>1</td><td>a single object</td>
+						</tr><tr>
+							<td>multiple</td><td>an array of objects</td>
+						</tr>
+					</tbody>
+				</table>
+			</div>
+
+			<h3>search($str = '')</h3>
+			<div class="indent">
+				Return all records in which the given string matches any field.
+			</div>
+
+			<h3>getFieldNames($unaliased = 0)</h3>
+			<div class="indent">
+				Returns an array of the field names in the record.  If any fields are aliased,
+				then those aliases will be returned by default.  If the <em>$unaliased</em>
+				flag is set to a value that evaluates as true, then the actual database field
+				names will be returned instead.
+			</div>
+
+			<h3>retrieveAll()</h3>
+			<div class="indent">
+				Returns all records on the table.
+			</div>
+
+			<h3>hasField($fieldName)</h3>
+			<div class="indent">
+				Verify whether or not the specified field name is a valid one.
+			</div>
+
+			<h3>getByField($fieldName, $value)</h3>
+			<div class="indent">
+			Retrieves records that match the specified value in the specified field.  This
+			is the underlying function called by the getBy&lt;field name&gt; functions
+			described above, so these two snippets:
+			<div class="code">
+user::getByLastName('Smith');
+			</div>
+			<div class="code">
+user::getByField('lastname', 'Smith');
+			</div>
+			will return exactly the same values.
+		</div>
+</div><div>
+		<div id="memberfunctions" class="section">
+			<h2>Member Functions</h2>
+			<h3>reset()</h3>
+			<div class="indent">
+			Resets the object, setting all fields to their default values and flagging it
+			as a new record.  This does not affect the actual database record, only the
+			object itself.
+			</div>
+
+			<h3>delete()</h3>
+			<div class="indent">
+			Deletes the record, removing it from the database and resetting object as a new
+			record.  Note that if the <strong><em>_predelete()</em></strong> function is
+			defined, it will be called before the data is scrubbed.
+			</div>
+
+			<h3>linkedRecords($definition, $maxRecursion = 10)</h3>
+			<div class="indent">
+			<strong>linkedRecords</strong> Is the function that follows table
+			links, retrieving linked records.  Normally, the link is defined in the table
+			structure, and called as a separate function in the object.  It can however be
+			called as a one-off link, passing the definition into the linkedRecords
+			function.
+				Given this example:
+				<div class="code">
+class user extends dbTemplate{
+	protected static $structure = array(
+		'name' =&gt; 'users',
+		'keys' =&gt; array('id'),
+		'fields' =&gt; array(
+			'id' =&gt; array(
+				'type' =&gt; 'INTEGER',
+				'auto' =&gt; true 
+			)
+			'group_id' =&gt; array(
+				'type' =&gt; 'INTEGER',
+				'default' =&gt; null, 
+			)
+		),
+		'links' =&gt; array(
+			'group' =&gt; array(
+				'class' =&gt; 'group',
+				'linkfields' =&gt; array(
+					'group_id' =&gt; 'id'
+				)
+			)
+		)
+	)
+}
+				</div>
+				The user class has a link called "group", and the group to which a user belongs
+				can be retrieved like so:
+				<div class="code">
+$group = $usr-&gt;group();
+				</div>
+				Without that link defined in the structure, that data could also be fetched by
+				passing the definition directly into linkedRecords:
+				<div class="code">
+$group = $usr-&gt;linkedRecords(array(
+	'class' =&gt; 'group',
+	'linkfields' =&gt; array(
+		'group_id' =&gt; 'id'
+	)
+));
+				</div>
+				Although the code above is valid, simple links like the one given here can also
+				be done by using the "getBy&lt;field&gt;" function:
+				<div class="code">
+$group = group::getById($usr-&gt;getGroupId());
+				</div>
+
+				<p>
+				<strong>maxRecursion</strong> is a safety check to avoid recursive links
+				connecting in infinite loops.  Each time <strong>linkedRecords</strong> follows
+				a link, it calls itself, passing in the child link parameters and decreasing
+				the value of maxRecursion by one.  If it reaches a value of zero or less, an
+				exception will be thrown, avoiding infinite recursion.
+				</p>
+			</div>
+
+			<h3>getField($name)</h3>
+			<div class="indent">
+				Returns the value of the specified field.  Note that this is
+				synonymous with "get&lt;field name&gt;()" and simply "&lt;field
+				name&gt;()".
+				<div class="code">
+$name = $user-&gt;getField('name');
+				</div>
+				<div class="code">
+$name = $user-&gt;getName();
+				</div>
+				<div class="code">
+$name = $user-&gt;name();
+				</div>
+				<p>All three of the above examples return the same result.</p>
+			</div>
+
+			<h3>__call($functionName, $params)</h3>
+			<div class="indent">
+				<strong>WRITE ME</strong>
+			</div>
+
+			<h3>save()</h3>
+			<div class="indent">
+				Saves the record back onto the database. Before doing so, records are scrubbed
+				with escape strings, numeric formatting etc.
+				<div class="code">
+$game-&gt;save();
+				</div>
+			</div>
+
+			<h3>refresh()</h3>
+			<div class="indent">
+				Reloads the data for the current record, reading it from the database and updating the object
+				<div class="code">
+$transaction-&gt;reload();
+				</div>
+			</div>
+
+			<h3>load($keyVals)</h3>
+			<div class="indent">
+				Load a record from the database into the current object
+				<div class="code">
+$u = new userClass();
+$u-&gt;load($uid);
+				</div>
+				Note that this is the same as passing the key fields into the construct:
+				<div class="code">
+$u = new userClass($uid);
+				</div>
+			</div>
+
+			<h3>setData($data, $params = array())</h3>
+			<div class="indent">
+				<p>Assigns a set values to a list of fields in the record.  Field names and
+				values are passed in as array key/value pairs in the <strong>$data</strong>
+				parameter, the keys being the field names.  Not all fields need to be passed
+				in, but it will throw an exception if one of them is invalid.</p>
+
+				<div class="code">
+$cartItem-&gt;setData(array(
+	'productId' =&gt; '1234',
+	'quantity' =&gt; '3',
+	'unitPrice' =&gt; '12.34'
+));
+				</div>
+
+				<p>The <strong>$params</strong> argument is an array of optional parameters.
+				The following values in the array are valid:</p>
+					<table class = "definitionList">
+						<tr>
+							<th>noalias</th>
+				<td>By default, any field aliases in place will be expected as the keys in the
+				array.  If "noalias" is included, then the unaliased field names will be used
+				instead.</td>
+						</tr><tr>
+							<th>noerror</th>
+				<td>If any exceptions are thrown when assigning the values, catch them and
+				continue looping through the list.</td>
+						</tr>
+					</table>
+
+			</div>
+
+			<h3>getData($noAlias = false)</h3>
+			<div class="indent">
+				<p>Returns an array listing the values of the fields in the record.  The array
+				keys are the field names and their values are the field values.</p>
+				<div class="code">
+print_r($user-&gt;getData());
+				</div>
+				<p>By default, if any fields are aliased, those aliases will be the array keys.
+				If the <strong>$noAlias</strong> parameter is set to true, then the raw field
+				names will be used instead.</p>
+			</div>
+
+			<h3>isNewRecord()</h3>
+			<div class="indent">
+				Returns true if the record is a new one that has not been saved to the database.  False otherwise.
+			</div>
+
+			<h3>setNewRecord($bool)</h3>
+			<div class="indent">
+				Marks the record as being a new one, regardless of the data contained.
+			</div>
+
+			<h3>getAlias($fieldName)</h3>
+			<div class="indent">
+				Returns the alias for the given field.  If not alias is set, the original field name is returned.
+			</div>
+
+			<h3>getArray()</h3>
+			<div class="indent">
+				Returns an array describing the structure and values of the record.  It is in
+				fact just the "fields" index of the $structure array, with field values added
+				into each field (with the key "value".
+			</div>
+		</div>
+
+		<div id="notes" class="section">
+			<h2>Additional Notes</h2>
+			<h3>Conversion to string</h3>
+			<p>
+				If converted to a string, any instance of dbTemplate will give a JSON encoded
+				dump of the data in the record.  For example, if a record has the fields "id",
+				"email", "age", "gender", with the values "1", "foo@bar.com", 22, "f", then
+				when converted to a string it would return:
+				<div class="code">
+{"id":"1","email":"foo@bar.com","age":"22","gender":"f"}
+				</div>
+			</p>
+			<p>
+				The keys used will always be raw field names; aliases will not be used.
+			</p>
+
+			<h3>_predelete()</h3>
+			</p>If defined, the member function <strong><em>_predelete()</em></strong> will
+			be called before the record is deleted.  This can be used for cleanup on
+			related records and the like before the actual deletion occurs.</p>
+
+		</div>
+
