@@ -1,4 +1,27 @@
- <?php
+<?php
+/******
+
+In the record linking structure, add a "filterby" parameter, which adds a where condition on the link
+that could be like so:
+
+"filterby" => array(
+	'category' => 'foo',
+	'groupid' => 'this::id'
+)
+
+the first item would add a "`category` = 'foo'" condition to the where clause
+the second item would add "`groupid` = $this->getField('id')";
+*****/
+
+
+/* Need to do one of these two things:
+	- add an error check, throwing an exception on any classes that have
+	  more than one "auto" field
+	- drop the auto functionality altogether, instead adding a "refresh"
+	  tag or just refreshing all fields
+*/
+
+
 // This class is used for simplifying the handling of database records.  Any
 // record can be retreived as an object, its values manipulated, etc.  Data is
 // scrubbed in the dbTemplate class to prevent SQL injections when it gets saved.
@@ -6,6 +29,8 @@
 /*
 TODO::::
 
+ - Figure out what I'm doing wrong that won't let the _oncreate, _onupdate,
+   etc. event functions work if they're declared private.
  - create a static create() function, which accepts either a series of values
    as  individual arguments, or as an array.  It creates a new record,
    assigning those values. 
@@ -68,6 +93,13 @@ abstract class dbTemplate{
 	protected $_aliasMap;
 	protected $_isNewRecord;
 	protected $_links;
+//**********##############*******************###########################################
+// NOT DOCUMENTED:  in the $structure definition, another acceptable category
+// of definition is "foreignfields".  It is quite similar to "links", but
+// instead of fetching a related record, it grabs only the related field.  As
+// of this writing, it's done quite inefficiently.  It's done by doing a query
+// on the fly when the field is called for.  Instead, it should grab the field
+// on the record load/refresh.
 	protected $_foreignfields;
 	protected $_mysqli;
 	static protected $mysqli;
@@ -94,7 +126,7 @@ abstract class dbTemplate{
 // validates them, and then searches for a record that matches them; returning
 // that or a new record with those values assigned, depending on the
 // cirumstance.
-		if(is_array($args[0]) && $numArgs == 1){
+		if($numArgs == 1 && is_array($args[0])){
 			if(count($args[0]) == $numExpectedArgs){
 				$this->load(array_values($args[0]));
 			}else{
@@ -109,6 +141,14 @@ abstract class dbTemplate{
 			$errMsg .= " (" . implode(', ', $this->_keys);
 			$errMsg .= "), received $numArgs instead";
 			throw new Exception($errMsg);
+		}
+
+// !!!!!!!!!!!!!!! UNDOCUMENTED !!!!!!!!!!!!!!!!!
+// allow a member function called _onNewRecord, which, if it exists, will be
+// called after initializing a new record, but not after loading an existing
+// one.
+		if($this->isNewRecord() && method_exists($this, '_onNewRecord')){
+			$this->_onNewRecord();
 		}
 	}
 
@@ -125,7 +165,7 @@ abstract class dbTemplate{
         protected function _initialize(){
 		$className = get_called_class();
 		$definitions = array(
-			'name' => '_tableName', 
+			'name' => '_tableName',
 			'keys' => '_keys',
 			'fields' => '_fields',
 			'links' => '_links',
@@ -163,8 +203,14 @@ abstract class dbTemplate{
 				$field['type'] = 'DECIMAL';
 
 			}
+
+			if(!array_key_exists('default', $field)){
+				$field['default'] = null;
+			}
 		}
 		$this->_aliasMap = $this->getAliasMap();
+
+		$this->_foreignfields = array_change_key_case($this->_foreignfields, CASE_LOWER); // <-- change field link keys to lower case, allowing case-insensitivity
 	}
 
 	// reset this record to a blank one
@@ -180,6 +226,12 @@ abstract class dbTemplate{
 		}
 		$this->_links = $newLinks;
 		$this->_isNewRecord = true;
+	}
+//////////////////////////////////////
+//@@@@@@@@@@@ NOT DOCUMENTED.  Return an array describing the fields in this table
+	public static function getFields(){
+		$className = get_called_class();
+		return $className::$structure['fields'];
 	}
 ///////////////////////////////////////
 //@@@@@@@@@ NOT DOCUMENTED.  Delete multiple records
@@ -199,9 +251,15 @@ abstract class dbTemplate{
 
 	// delete this record from the database and reset the object
 	public function delete(){
-
 		if(method_exists($this, '_predelete')){
-			$this->_predelete();
+/////////////////////////////////////////
+//@@@@@@@@@@@ NOT DOCUMENTED.  if _predelete returns the value false, the
+//actual deletion of the record will not happen, and _postdelete will not be
+//called.
+//////////////////////////////////////
+			if($this->_predelete() === false){
+				return;
+			}
 		}
 
 		if(!$this->_isNewRecord){
@@ -211,7 +269,7 @@ abstract class dbTemplate{
 				$queryParts[] .= "`$keyField` = '" . $this->_data[$keyField] . "'";
 			}
 			$query .= implode(' AND ', $queryParts);
-			if(!$this->_mysqli->query($query)){
+			if(!$this->query($query)){
 				throw new Exception("Unable to delete record: {$this->_mysqli->error}\nFailed query: $query");
 			}
 		}
@@ -220,6 +278,26 @@ abstract class dbTemplate{
 //$$$$$$$$$$$$$$$$$$$$$$$$$$$444444 Documented?  Not sure
 		if(method_exists($this, '_postdelete')){
 			$this->_postdelete();
+		}
+	}
+
+///@@@@@@@@@@@@ Not yet documented ///////////////
+	public static function truncate($confirmation = null){
+		/*** USE WITH EXTREME CARE!!! This truncates the table ***/
+
+		$className = get_called_class();
+		$tableName = $className::$structure['name'];
+
+		if(
+			is_array($confirmation) 
+			&& count($confirmation) == 1 
+			&& key($confirmation) == 'confirm'
+			&& $confirmation['confirm'] === true
+		){
+			
+			dbTemplate::query('TRUNCATE TABLE ' . $tableName);
+		}else{
+			throw new Exception($className . '::truncate($confirmation) requires one parameter, which should be an array with a single key => value pair.  The key must be the string "confirm", and the value must be true (not a value that evaluates as true, but the actual value true).  Use with caution.');
 		}
 	}
 
@@ -233,7 +311,6 @@ abstract class dbTemplate{
 		$aliasMap = array();
 		foreach($className::$structure['fields'] as $fName => $fData){
 			if(array_key_exists('alias', $fData)){
-				
 				$aliasMap[strtolower($fData['alias'])] = $fName;
 			}else{
 				$aliasMap[strtolower($fName)] = $fName;
@@ -262,12 +339,17 @@ abstract class dbTemplate{
 				$rval = intval($value);
 				break;
 			case 'TIMESTAMP':
-				$rval = date('Y-m-d H:i:s', strtotime($value));
+				if($value == 'NOW()'){
+					$rval = 'NOW()';
+				}else{
+					$timeStamp = strtotime($value);
+					$rval = date('Y-m-d H:i:s', $timeStamp < 1 ? 1 : $timeStamp);
+				}
 				break;
 			case 'DECIMAL':
 				if(array_key_exists('rounding', $fieldDef)){
 					$digits = intval($fieldDef['rounding']);
-					$rval = number_format(floatval($value), $digits);
+					$rval = number_format(floatval($value), $digits, '.', ',');
 				}else{
 					$rval = floatval($value);
 				}
@@ -296,6 +378,36 @@ abstract class dbTemplate{
 			}
 		}
 
+		return $rval;
+	}
+
+///// NOT DOCUMENTED!!!!
+	// get a list of all allowed values for a field that has a restricted set (ENUM or BOOLEAN at this point)
+	public static function allowedValues($fieldName){
+		$rval = null;
+		$className = get_called_class();
+		$aliasMap = $className::getAliasMap();
+		$fieldName = strtolower($fieldName);
+		if(array_key_exists($fieldName, $aliasMap)){
+			$fieldName = $aliasMap[$fieldName];
+		}
+
+		if(!array_key_exists($fieldName, $className::$structure['fields'])){
+			throw new Exception("$className::allowedValues(): Invalid field name \"$fieldName\"");
+		}else{
+			$definition = $className::$structure['fields'][$fieldName];
+			$fieldType = strtoupper($definition['type']);
+			switch($fieldType){
+				case 'ENUM':
+					$rval = $definition['values'];
+					break;
+				case 'BOOLEAN':
+					$rval = array(0, 1);
+					break;
+				default:
+					throw new Exception("$className::allowedValues(): This function is only callable on ENUM or BOOLEAN field types - called on $fieldType");
+			}
+		}
 		return $rval;
 	}
 
@@ -370,7 +482,7 @@ abstract class dbTemplate{
 		return $rval;
 	}
 
-	// find the record(s) that this one links to based on the links 
+	// find the record(s) that this one links to based on the links
 	// $definition should be the array that defines the link.  This is passed in to allow for recursion
 	public function linkedRecords($definition, $maxRecursion = 10){
 		if($maxRecursion <= 0){
@@ -404,7 +516,11 @@ abstract class dbTemplate{
 		}
 		$tableName = $definition['class']::$structure['name'];
 		$query = "SELECT * FROM `" . $tableName . "` WHERE " . implode(' AND ', $conditions);
-		$results = $this->_mysqli->query($query);
+///////////// NOT DOCUMENTED!!!!  the orderby definition element
+		if(array_key_exists('orderby', $definition)){
+			$query .= " ORDER BY " . $this->_mysqli->real_escape_string($definition['orderby']);
+		}
+		$results = $this->query($query);
 
 		// we won't put any count limit on the query, but instead
 		// return an array of records of there's more than one
@@ -474,7 +590,7 @@ abstract class dbTemplate{
 				$rval = $this->_data[$name];
 			}
 
-		// maybe we can find it as a linked record		
+		// maybe we can find it as a linked record
 		}else if(array_key_exists($name, $this->_links)){
 			$rval = $this->linkedRecords($this->_links[$name]);
 
@@ -482,7 +598,14 @@ abstract class dbTemplate{
 		}else if(array_key_exists($name, $this->_foreignfields)){
 			$def = $this->_foreignfields[$name];
 			$obj = $this->linkedRecords($this->_links[$def['link']]);
-			$rval = $obj->getField($def['field']);
+			if(is_array($obj)){
+				$rval = array();
+				foreach($obj as $o){
+					$rval[] = $o->getField($def['field']);
+				}
+			}else if(is_object($obj)){
+				$rval = $obj->getField($def['field']);
+			}
 
 		// no dice
 		}else{
@@ -509,7 +632,6 @@ abstract class dbTemplate{
 			if($prefix == 'get'){
 				$name = substr($func, 3);
 				return $this->getField($name);
-			
 			}else if($prefix == 'set'){
 				$name = substr($func, 3);
 				if(count($params) != 1){
@@ -548,6 +670,7 @@ abstract class dbTemplate{
 				// an undefined function.  It may give infinite recursion as a result.
 				return $this->{$this->_fields[$thisField]['sethandler']}($value);
 			}else{
+				if($value === null) return $value;
 				// validate ENUMS
 				if($this->_fields[$thisField]['type'] == 'enum'){
 					if(!in_array($value, $this->_fields[$thisField]['values'])){
@@ -628,6 +751,8 @@ abstract class dbTemplate{
 					$val = $this->scrubValue($this->_data[$fName], $fName);
 					if($val === null){
 						$valueList[] = 'NULL';
+					}else if(strtoupper($val) == 'NOW()' && strtoUpper($fStruct['type']) == 'TIMESTAMP'){
+						$valueList[] = 'NOW()';
 					}else{
 						$valueList[] = "'$val'";
 					}
@@ -635,7 +760,7 @@ abstract class dbTemplate{
 			}
 			$query .= " (`" . implode('`, `', $fieldList) . "`)";
 			$query .= " VALUES (" . implode(", ", $valueList) . ")";
-			if(!$this->_mysqli->query($query)){
+			if(!$this->query($query)){
 				throw new Exception("Unable to create new record: " . $this->_mysqli->error . "\n" . $query . "\n");
 			}
 
@@ -649,6 +774,11 @@ abstract class dbTemplate{
 			}
 
 			$this->refresh();
+
+//!!!!!!!! NOT DOCUMENTED : this "_oncreate" method is called after successfully creating a record
+			if(method_exists($this, '_oncreate')){
+				$this->_oncreate();
+			}
 		}else{
 			// we're updating an existing record
 			$query = "UPDATE " . $this->_mysqli->real_escape_string($this->_tableName) . " SET ";
@@ -672,8 +802,13 @@ abstract class dbTemplate{
 				$queryParts[] .= "`$keyField` = '" . $this->scrubValue($this->_data[$keyField], $keyField) . "'";
 			}
 			$query .= implode(' AND ', $queryParts);
-			if(!$this->_mysqli->query($query)){
+			if(!$this->query($query)){
 				throw new Exception("Unable to update record: " . $this->_mysqli->error);
+			}
+
+//!!!!!!!! NOT DOCUMENTED : this "_onupdate" method is called after successfully updating a record
+			if(method_exists($this, '_onupdate')){
+				$this->_onupdate();
 			}
 		}
 	}
@@ -699,7 +834,14 @@ abstract class dbTemplate{
 			$conditions[] = "`" . $this->_mysqli->real_escape_string($this->_keys[$n]) . "` = '" . $this->scrubValue($keyVals[$n], $this->_keys[$n]) . "'";
 		}
 		$query = "SELECT * FROM `" . $this->_tableName . "` WHERE " . implode(' AND ', $conditions);
-		$result = $this->_mysqli->query($query);
+		$result = $this->query($query);
+
+		// this is a bit of a bug that needs to be fixed:
+		// this fetch_assoc will throw an exception if there are no rows.  That means
+		// the else below will never be met.
+		// Instead, this should use a try-catch, with the catch throwing the
+		// explanatory exception.  Note that some code depends on this exception, so
+		// simply ploughing ahead with a new record is not acceptable.
 		$row = $result->fetch_assoc();
 		if($row){
 			$this->_isNewRecord = false;
@@ -723,7 +865,7 @@ abstract class dbTemplate{
 		foreach($data as $field => $value){
 			if($noAlias){
 				if(!array_key_exists($field, $this->_fields)){
-					throw new Exception('dbTemplate::setData: Invalid field name "' . $field . '".');
+					throw new Exception('dbTemplate:' . get_class($this) . '::setData: Invalid field name "' . $field . '".');
 				}
 				$functionName = "set" . $this->getAlias($field);
 			}else{
@@ -797,7 +939,7 @@ abstract class dbTemplate{
 					"` LIKE '%" . dbTemplate::$mysqli->real_escape_string($str) . "%'";
 		}
 		$query .= implode(' OR ', $conditions);
-		$result = dbTemplate::$mysqli->query($query);
+		$result = dbTemplate::query($query);
 		$rval = array();
 		while($row = $result->fetch_assoc()){
 			$record = new $className();
@@ -828,7 +970,7 @@ abstract class dbTemplate{
 		$aliasMap = $className::getAliasMap();
 
 		if(func_num_args() == 0){
-			$fields = array_keys($aliasMap);
+			$fields = array_values($aliasMap);
 		}else{
 			$argList = func_get_args();
 			for($n = 0; $n < count($argList); $n++){
@@ -842,7 +984,7 @@ abstract class dbTemplate{
 				}
 				$fieldName = strtolower(trim($name));
 				if(!array_key_exists($fieldName, $aliasMap)){
-					throw new Exception("dbTemplate::retrieveAll(<fieldnames>): invalid field name '$fieldName'");
+					throw new Exception("dbTemplate::retrieveData(<fieldnames>): invalid field name '$fieldName'");
 				}
 				$fields[] = $aliasMap[$fieldName];
 			}
@@ -854,7 +996,7 @@ abstract class dbTemplate{
 		}
 		$query .= "FROM `" . $className::$structure['name'] . "`";
 
-		$q = dbTemplate::$mysqli->query($query);
+		$q = dbTemplate::query($query);
 		$rval = [];
 		while($row = $q->fetch_assoc()){
 			$rval[] = $row;
@@ -865,9 +1007,9 @@ abstract class dbTemplate{
 	// returns an array of objects representing each record in the table.
 	public static function retrieveAll(){
 		$className = get_called_class();
-		$q = dbTemplate::$mysqli->query("SELECT * FROM `" . $className::$structure['name'] . "`");
-		$rval = [];
-		while($row = $q->fetch_assoc()){			
+		$q = dbTemplate::query("SELECT * FROM `" . $className::$structure['name'] . "`");
+		$rval = array();
+		while($row = $q->fetch_assoc()){
 			$obj = new $className();
 
 			$obj->setData($row, array('noalias', 'noerror'));
@@ -926,11 +1068,19 @@ abstract class dbTemplate{
 			throw new Exception("dbTemplate::getByField('$fieldName', '$value'): Invalid field name '" . $fieldName . "'");
 		}
 
-		$query = "
-			SELECT * FROM `" . $className::$structure['name'] . "`
-			WHERE `" . dbTemplate::$mysqli->real_escape_string($realFieldName) . "` = '"
-			. $className::scrubValue($value, $realFieldName) . "'
-		";
+		if($value == null){
+			$query = "
+				SELECT * FROM `" . $className::$structure['name'] . "`
+				WHERE `" . dbTemplate::$mysqli->real_escape_string($realFieldName) . "` IS NULL
+			";
+
+		}else{
+			$query = "
+				SELECT * FROM `" . $className::$structure['name'] . "`
+				WHERE `" . dbTemplate::$mysqli->real_escape_string($realFieldName) . "` = '"
+				. $className::scrubValue($value, $realFieldName) . "'
+			";
+		}
 
 		// FIXME - this really needs to be handled more elegantly.
 		if(array_key_exists('orderby', $className::$structure)){
@@ -942,7 +1092,7 @@ abstract class dbTemplate{
 			$query .= '`' . implode('`,`', $orderSet) . '`';
 		}
 
-		$results = dbTemplate::$mysqli->query($query);
+		$results = dbTemplate::query($query);
 		if(!$results){
 			throw new Exception("dbTemplate::getByField('$fieldName', '$value'): " . dbTemplate::$mysqli->error);
 		}
@@ -1015,5 +1165,17 @@ abstract class dbTemplate{
 		}
 
 		return $keyList;
+	}
+	}
+
+//@@@@@@@@@@@@@@@@@@@@ NOT DOCUMENTED.  Perform a raw query.
+	// !!!!!!!!!  NOT ERROR CHECKED IN ANY WAY!  Only use this if you know ~exactly~ what you're doing !!!!!!!!!!
+	public static function query($query){
+		$rval = dbTemplate::$mysqli->query($query);
+		return $rval;
+	}
+
+	public static function getInstance(){
+		return dbTemplate::$mysqli;
 	}
 }
