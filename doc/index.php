@@ -179,7 +179,7 @@
 			</div>
 			<div id="contentWrapper"></div>
 		</div>
-		<div id="contentFoot">Copyright &copy; 2015 Jacob A. Ewing.  Licensed under <a href="http://www.gnu.org/licenses/gpl-3.0.en.html">GNU GPL 3.0</a></div>
+		<div id="contentFoot">Copyright &copy; 2015 Jacob A. Ewing  &nbsp;|&nbsp;   Licensed under <a href="http://www.gnu.org/licenses/gpl-3.0.en.html">GNU GPL 3.0</a>  &nbsp;|&nbsp;  Last Updated 2018-04-12</div>
 	</div>
 </body>
 </html>

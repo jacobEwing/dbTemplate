@@ -742,6 +742,25 @@ $userList = $group-&gt;users();
 
 		<div id="staticfunctions" class="section">
 			<h2>Static Functions</h2>
+
+			<h3>allowedValues</h3>
+			<div class="indent">
+				<p>Returns a list of available values in a field of types enumeration or boolean.<p>
+				<p>For example, with an enumeration field defined as follows:</p>
+				<div class="code">...
+
+'colours' =&gt; array(
+	'type' =&gt; 'ENUM',
+	'values' =&gt; array( 'red', 'green', 'blue', 'yellow', 'cyan', 'magenta' )
+)
+
+...				</div>
+				
+				<p>Then calling</p> 
+				<div class="code">myTableClass::allowedValues('colours')</div>
+				<p>Will return that values array.  With a boolean, the return value will be an array with the numeric values 1 and 0.</p>
+			</div>
+
 			<h3>connect($host, $user, $password, $database)</h3>
 			<div class="indent">
 				Open a data base connection.
@@ -803,6 +822,49 @@ transactions::getByAccountNumber($accNumber);
 				</table>
 			</div>
 
+			<h3>deleteMultiple($records)</h3>
+			<div class="indent">
+				Attempts to delete all records provided in the array <em>$records</em>.
+				The argument can be either an array of actual record objects, or an array of key values.
+			</div>
+
+			<h3>deleteWhere&lt;<em>field</em>&gt;In($values)</h3>
+			<div class="indent">
+				<p>Deletes all fields on the table in which specified field matches any of the specified values.</p>
+				<p>The <em>$values</em> parameter should be an array of values to search for.</p>
+				<p>The <em>field</em> part of the function name should be the name of the field to match.</p>
+				<p>For example, using a table with this structure definition:</p>
+				<div class="code">
+class user extends dbTemplate{
+	protected static $structure = array(
+		'name' =&gt; 'users',
+		'keys' =&gt; array('id'),
+		'fields' =&gt; array(
+			'id' =&gt; array(
+				'type' =&gt; 'INTEGER',
+				'auto' =&gt; true 
+			)
+			'first_name' =&gt; array(
+				'type' =&gt; 'VARCHAR(32)',
+				'alias' =&gt; 'firstName'
+			)
+		)
+	)
+}
+				</div>
+				<p>We could say:</p>
+				<div class="code">
+userClass::deleteWhereFirstNameIn('Bob', 'Charlie', 'Dave'); 
+				</div>
+				<p>Which would delete all <em>users</em> records in which the first_name field is equal to any of the given values.</p>
+				<p>Note that if the field has an alias, that alias should be used in the function call.  In the example above, this code would not work:
+				<div class="code">
+userClass::deleteWherefirst_nameIn('Bob', 'Charlie', 'Dave'); 
+				</div>
+				and an error would be returned.</p>
+
+			</div>
+
 			<h3>search($str = '')</h3>
 			<div class="indent">
 				Return all records in which the given string matches any field.
@@ -816,6 +878,15 @@ transactions::getByAccountNumber($accNumber);
 				names will be returned instead.
 			</div>
 
+			<h3>getFields()</h3>
+			<div class="indent">
+				Returns a full array of the field structure in the class.  Note that it is
+				returning a copy of that field structure, not the structure itself, so the
+				returned value can be modified safely.
+			</div>
+
+
+
 			<h3>retrieveAll()</h3>
 			<div class="indent">
 				Returns all records on the table.
@@ -828,16 +899,28 @@ transactions::getByAccountNumber($accNumber);
 
 			<h3>getByField($fieldName, $value)</h3>
 			<div class="indent">
-			Retrieves records that match the specified value in the specified field.  This
-			is the underlying function called by the getBy&lt;field name&gt; functions
-			described above, so these two snippets:
-			<div class="code">
+				Retrieves records that match the specified value in the specified field.  This
+				is the underlying function called by the getBy&lt;field name&gt; functions
+				described above, so these two snippets:
+				<div class="code">
 user::getByLastName('Smith');
-			</div>
-			<div class="code">
+				</div>
+				<div class="code">
 user::getByField('lastname', 'Smith');
+				</div>
+				will return exactly the same values.
 			</div>
-			will return exactly the same values.
+
+
+			<h3>truncate($confirmation)</h3>
+			<div class="indent">
+				<strong>USE WITH EXTREME CAUTION</strong><br/>
+				<p>Completely empties the table, using the TRUNCATE command.</p>
+				<p>This will only execute if you pass in an array with a single key/value pair.
+				The key of the array should be the text "confirm", and the value should be a
+				boolean value of true.  It checks that condition extremely strictly to avoid
+				any chance of accidentally truncating a table.</p>
+			</div>
 		</div>
 </div><div>
 		<div id="memberfunctions" class="section">
@@ -852,7 +935,7 @@ user::getByField('lastname', 'Smith');
 			<h3>delete()</h3>
 			<div class="indent">
 			Deletes the record, removing it from the database and resetting object as a new
-			record.  Note that if the <strong><em>_predelete()</em></strong> function is
+			record.  Note that if the <strong><em>_preDelete()</em></strong> function is
 			defined, it will be called before the data is scrubbed.
 			</div>
 
@@ -1039,6 +1122,100 @@ print_r($user-&gt;getData());
 			</div>
 		</div>
 
+		<div id="eventFunctions" class="section">
+			<h2>Event Functions</h2>
+			<p>The dbTemplate class also checks for functions which will be called on
+			certain events.  These are all optional.</p>
+
+
+			<h3>_onNewRecord()</h3>
+			<div class="indent">
+				</p>The member function <strong><em>_onNewRecord()</em></strong> is called upon
+				creating a new record, immediately after its data structure is defined and
+				default values assigned.</p>
+			</div>
+
+
+			<h3>_preCreate()</h3>
+			<div class="indent">
+				<p>The member function <strong><em>_preCreate()</em></strong> is called
+				within a new record immediately before saving it.  If the <em>_preSave()</em>
+				function is defined, it will be called <strong>before</strong>
+				<em>_preCreate()</em></p>
+			</div>
+
+
+			<h3>_postCreate()</h3>
+			<div class="indent">
+				<p>The member function <strong><em>_postCreate()</em></strong> is called
+				within a new record after saving it.</p>
+
+				<p>Note that <em>_postCreate()</em> is a replacement for the
+				legacy function <em>_oncreate()</em>, which will be removed in a later version.
+				This change is for better naming convention, and to make its purpose more obvious.</p>
+			</div>
+
+
+			<h3>_preUpdate()</h3>
+			<div class="indent">
+				<p>The member function <strong><em>_preUpdate()</em></strong> is called
+				within an existing record immediately before saving it.  If the <em>_preSave()</em>
+				function is defined, it will be called <strong>before</strong>
+				<em>_preUpdate()</em></p>
+			</div>
+
+
+			<h3>_postUpdate()</h3>
+			<div class="indent">
+				<p>The member function <strong><em>_postUpdate()</em></strong> is called
+				within an existing record after saving it.</p>
+
+				<p>Note that <em>_postUpdate()</em> is a replacement for the
+				legacy function <em>_onupdate()</em>, which will be removed in a later version.
+				This change is for better naming convention, and to make its purpose more obvious.</p>
+			</div>
+
+
+			<h3>_preSave()</h3>
+			<div class="indent">
+				<p>The member function <strong><em>_preSave()</em></strong> is called
+				within a record immediately before saving it.  Unlike _preCreate()
+				and _preUpdate() <em>_preSave()</em> is called regardless of whether
+				or not the record is new.  <em>_preSave()</em> is executed <strong>before</strong>
+				either of the other two, and will be the first one executed if the others are
+				defined.</p>
+			</div>
+
+
+			<h3>_postSave()</h3>
+			<div class="indent">
+				<p>The member function <strong><em>_postSave()</em></strong> is called
+				within a record immediately after saving it.  Unlike _postCreate()
+				and _postUpdate() <em>_postSave()</em> is called regardless of whether
+				or not the record is new.  <em>_postSave()</em> is executed <strong>after</strong>
+				either of the other two, and will be the last one executed if the others are
+				defined.</p>
+			</div>
+
+
+			<h3>_preDelete()</h3>
+			<div class="indent">
+				<p>If defined, the member function <strong><em>_preDelete()</em></strong> will
+				be called before the record is deleted.  This can be used for cleanup on
+				related records and the like before the actual deletion occurs.</p>
+				<p>Note that if <strong><em>_preDelete()</em></strong> returns false, the
+				deletion will not be executed, and the record remains untouched.</p>
+			</div>
+
+			<h3>_postDelete()</h3>
+			<div class="indent">
+				<p>Member function called after deleting the record, at the end of the
+				<em>delete</em> function</p>
+			</div>
+
+
+		</div>
+
 		<div id="notes" class="section">
 			<h2>Additional Notes</h2>
 			<h3>Conversion to string</h3>
@@ -1055,10 +1232,5 @@ print_r($user-&gt;getData());
 				The keys used will always be raw field names; aliases will not be used.
 			</p>
 
-			<h3>_predelete()</h3>
-			</p>If defined, the member function <strong><em>_predelete()</em></strong> will
-			be called before the record is deleted.  This can be used for cleanup on
-			related records and the like before the actual deletion occurs.</p>
 
 		</div>
-

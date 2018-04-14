@@ -29,12 +29,6 @@ the second item would add "`groupid` = $this->getField('id')";
 /*
 TODO::::
 
- - Figure out what I'm doing wrong that won't let the _oncreate, _onupdate,
-   etc. event functions work if they're declared private.
- - create a static create() function, which accepts either a series of values
-   as  individual arguments, or as an array.  It creates a new record,
-   assigning those values. 
-
  - !! Really need to re-structure the way results are handled.  I think results
    need to be a class of their own.  They could store a 2d array of key values,
    each row retrieveable as a record object.  That may be a bit tricky since
@@ -61,7 +55,7 @@ TODO::::
 
     Actually, I'll have to consider handling that by simply extending the
     dbTemplate class.  It might be as simple as switching $_data to be an array
-    of records containing it's current structure.  The count of $_data would be
+    of records containing its current structure.  The count of $_data would be
     the number of records handled.  Obviously functions would need to be
     updated for that.
 
@@ -73,8 +67,6 @@ TODO::::
    identical to another field name.
 
  - ensure that all field flags are case-insensitive
-
- - move boolean fields into an array called flags?
 
  - change the maximum link field recursion depth to a defiend constant
    somewhere, rather than a local hard-coded one.
@@ -143,10 +135,6 @@ abstract class dbTemplate{
 			throw new Exception($errMsg);
 		}
 
-// !!!!!!!!!!!!!!! UNDOCUMENTED !!!!!!!!!!!!!!!!!
-// allow a member function called _onNewRecord, which, if it exists, will be
-// called after initializing a new record, but not after loading an existing
-// one.
 		if($this->isNewRecord() && method_exists($this, '_onNewRecord')){
 			$this->_onNewRecord();
 		}
@@ -227,14 +215,10 @@ abstract class dbTemplate{
 		$this->_links = $newLinks;
 		$this->_isNewRecord = true;
 	}
-//////////////////////////////////////
-//@@@@@@@@@@@ NOT DOCUMENTED.  Return an array describing the fields in this table
 	public static function getFields(){
 		$className = get_called_class();
 		return $className::$structure['fields'];
 	}
-///////////////////////////////////////
-//@@@@@@@@@ NOT DOCUMENTED.  Delete multiple records
 	public static function deleteMultiple($records){
 		$className = get_called_class();
 		if(!is_array($records)){
@@ -251,13 +235,9 @@ abstract class dbTemplate{
 
 	// delete this record from the database and reset the object
 	public function delete(){
-		if(method_exists($this, '_predelete')){
-/////////////////////////////////////////
-//@@@@@@@@@@@ NOT DOCUMENTED.  if _predelete returns the value false, the
-//actual deletion of the record will not happen, and _postdelete will not be
-//called.
-//////////////////////////////////////
-			if($this->_predelete() === false){
+
+		if(method_exists($this, '_preDelete')){
+			if($this->_preDelete() === false){
 				return;
 			}
 		}
@@ -275,13 +255,11 @@ abstract class dbTemplate{
 		}
 		$this->reset();
 
-//$$$$$$$$$$$$$$$$$$$$$$$$$$$444444 Documented?  Not sure
-		if(method_exists($this, '_postdelete')){
-			$this->_postdelete();
+		if(method_exists($this, '_postDelete')){
+			$this->_postDelete();
 		}
 	}
 
-///@@@@@@@@@@@@ Not yet documented ///////////////
 	public static function truncate($confirmation = null){
 		/*** USE WITH EXTREME CARE!!! This truncates the table ***/
 
@@ -381,7 +359,6 @@ abstract class dbTemplate{
 		return $rval;
 	}
 
-///// NOT DOCUMENTED!!!!
 	// get a list of all allowed values for a field that has a restricted set (ENUM or BOOLEAN at this point)
 	public static function allowedValues($fieldName){
 		$rval = null;
@@ -437,9 +414,6 @@ abstract class dbTemplate{
 				$rval = $results;
 			}
 		}else if(strtolower(substr($funcName, 0, 11)) == 'deletewhere' && strtolower(substr($funcName, -2)) == 'in'){
-//@@@@@ not yet documented
-// accepts a single value, an array of values, or a series of arguments, each one a separate value
-// returns an array of records that matched but were not successfully deleted.
 			$fieldName = strtolower(substr($funcName, 11, -2));
 			$aliasMap = $className::getAliasMap();
 			if(!array_key_exists($fieldName, $aliasMap)){
@@ -452,9 +426,9 @@ abstract class dbTemplate{
 			}else{
 				$valueList = array($args[0]);
 			}
-// also, this could get better performance by wrapping this for loop in an if
-// checking for the _predelete function.  If it's there, do this, if not, build
-// a single mass SQL delete.
+			// This could get better performance by wrapping this for loop in an if
+			// checking for the _predelete function.  If it's there, do this, if not, build
+			// a single mass SQL delete.
 			foreach($valueList as $val){
 				$valResult = $className::getByField($fieldName, $val);
 				if(is_object($valResult)){
@@ -739,7 +713,15 @@ abstract class dbTemplate{
 
 	// save the record, and update accordingly if it's a newly created one.
 	public function save(){
+		if(method_exists($this, '_preSave')){
+			$this->_preSave();
+		}
+
 		if($this->_isNewRecord){
+			if(method_exists($this, '_preCreate')){
+				$this->_preCreate();
+			}
+
 			// we're creating a new record
 			$query = "INSERT INTO `" . $this->_mysqli->real_escape_string($this->_tableName) . "`";
 			$fieldList = array();
@@ -775,11 +757,21 @@ abstract class dbTemplate{
 
 			$this->refresh();
 
-//!!!!!!!! NOT DOCUMENTED : this "_oncreate" method is called after successfully creating a record
+			if(method_exists($this, '_postCreate')){
+				$this->_postCreate();
+			}
+
+			// this function is badly named, and is here for legacy
+			// purposes only.  It should not be used.  Instead, use
+			// "_postCreate()", which serves the same purpose.
 			if(method_exists($this, '_oncreate')){
 				$this->_oncreate();
 			}
+
 		}else{
+			if(method_exists($this, '_preUpdate')){
+				$this->_preUpdate();
+			}
 			// we're updating an existing record
 			$query = "UPDATE " . $this->_mysqli->real_escape_string($this->_tableName) . " SET ";
 			$queryParts = array();
@@ -806,10 +798,20 @@ abstract class dbTemplate{
 				throw new Exception("Unable to update record: " . $this->_mysqli->error);
 			}
 
-//!!!!!!!! NOT DOCUMENTED : this "_onupdate" method is called after successfully updating a record
+			if(method_exists($this, '_postUpdate')){
+				$this->_postUpdate();
+			}
+
+			// this function is badly named, and is here for legacy
+			// purposes only.  It should not be used.  Instead, use
+			// "_postUpdate()", which serves the same purpose.
 			if(method_exists($this, '_onupdate')){
 				$this->_onupdate();
 			}
+		}
+
+		if(method_exists($this, '_postSave')){
+			$this->_postSave();
 		}
 	}
 
@@ -1165,7 +1167,6 @@ abstract class dbTemplate{
 		}
 
 		return $keyList;
-	}
 	}
 
 //@@@@@@@@@@@@@@@@@@@@ NOT DOCUMENTED.  Perform a raw query.
