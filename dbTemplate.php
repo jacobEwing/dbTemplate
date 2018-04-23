@@ -85,13 +85,6 @@ abstract class dbTemplate{
 	protected $_aliasMap;
 	protected $_isNewRecord;
 	protected $_links;
-//**********##############*******************###########################################
-// NOT DOCUMENTED:  in the $structure definition, another acceptable category
-// of definition is "foreignfields".  It is quite similar to "links", but
-// instead of fetching a related record, it grabs only the related field.  As
-// of this writing, it's done quite inefficiently.  It's done by doing a query
-// on the fly when the field is called for.  Instead, it should grab the field
-// on the record load/refresh.
 	protected $_foreignfields;
 	protected $_mysqli;
 	static protected $mysqli;
@@ -618,7 +611,6 @@ abstract class dbTemplate{
 		}
 	}
 
-// @@@@@@@@@@@@@@@@@@@@ !!! Not yet documented.  This was previously just part of the __call function.  Assigns the specified value to the specified field.
 	public function setField($field, $value){
 		$thisField = null;
 		if(array_key_exists($field, $this->_aliasMap)){
@@ -962,7 +954,6 @@ abstract class dbTemplate{
 		return $rval;
 	}
 
-//@@@@@@@@@@@@@ not yet documented
 	// Returns an array of arrays containing the field values of every record in
 	// the table.  Field names can be passed in either as multiple arguments or as
 	// an array (or even multiple arrays) of strings.
@@ -1122,7 +1113,7 @@ abstract class dbTemplate{
 		return $rval;
 	}
 
-//@@@@@@@@@@@@@ NOT DOCUMENTED.  Import $filename as a CSV file, inserting the records into this table.
+	// Import $filename as a CSV file, inserting the records into this table.
 	public static function importCSV($filename){
 		$keyList = array();
 		$className = get_called_class();
@@ -1169,7 +1160,7 @@ abstract class dbTemplate{
 		return $keyList;
 	}
 
-//@@@@@@@@@@@@@@@@@@@@ NOT DOCUMENTED.  Perform a raw query.
+	// Perform a raw query.
 	// !!!!!!!!!  NOT ERROR CHECKED IN ANY WAY!  Only use this if you know ~exactly~ what you're doing !!!!!!!!!!
 	public static function query($query){
 		$rval = dbTemplate::$mysqli->query($query);

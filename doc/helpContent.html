@@ -140,13 +140,13 @@ class product extends dbTemplate{
 			class.  It has the following array keys:
 			<div class="textblock">
 				<h3>name</h3>
-				The name of the table as defined in the database.  This is (obviously) a required key.
+				The name of the table as defined in the database.  This is a required key.
 				<div class="code">'name' =&gt; 'products'</div>
 			</div>
 
 			<div class="textblock">
 				<h3>keys</h3>
-				An array containing the primary table key of this table.  Also required.
+				An array containing the primary key(s) of this table.  Also required.
 				<div class="code">'keys' =&gt; array('id')</div>
 				<div class="code">'keys' =&gt; array('users_id', 'permissions_id')</div>
 			</div>
@@ -205,6 +205,7 @@ protected static $structure = array(
 					type</h4>
 					<div class="indent">
 						Defines the data type of the field.  Valid values are:
+						<br/><br/>
 						<ul>
 							<li>
 								<strong>VARCHAR</strong>, <strong>VARCHAR</strong><em>(&lt;maxlength&gt;)</em>
@@ -738,6 +739,99 @@ $userList = $group-&gt;users();
 
 				</div>
 			</div>
+			<div class="textblock">
+				<h3>foreignfields</h3>
+				<p>This is an optional key in the table structure definition, and is dependent
+				on having table links defined.  This provides a means of extracting one specific
+				field from any linked records, instead of fetching the record itself.
+				</p>
+				<p>Note that this is currently no more efficient than fetching the record and
+				reading the field out of that, as that is exactly what it does.  At the time of
+				this writing, this is just a coding convenience.
+				</p>
+				<p>Using one of the link fields from an earlier example:
+				</p>
+
+
+
+				"foreignfields" points to an array of parameters that describe links to 
+				specific fields on other tables, whech can then be accessed like other 
+				fields in the table itself.</p>
+
+				<p>Expanding upon the "Links" example given previously:</p>
+				<div class="code">
+				
+class user extends dbTemplate{
+	protected static $structure = array(
+		'name' =&gt; 'users',
+		'keys' =&gt; array('id'),
+		'fields' =&gt; array(
+			'id' =&gt; array(
+				'type' =&gt; 'INTEGER',
+				'auto' =&gt; true 
+			),
+			'email' =&gt; array(
+				'type' =&gt; 'VARCHAR(256)',
+				'default' =&gt; null,
+				'required' =&gt; true
+			),
+			'group_id' =&gt; array(
+				'type' =&gt; 'INTEGER',
+				'default' =&gt; null, 
+			)
+		),
+		'links' =&gt; array(
+			'group' =&gt; array(
+				'class' =&gt; 'group',
+				'linkfields' =&gt; array(
+					'group_id' =&gt; 'id'
+				)
+			)
+		)
+	)
+}
+
+class group extends dbTemplate{
+	protected static $structure = array(
+		'name' =&gt; 'groups',
+		'keys' =&gt; array('id'),
+		'fields' =&gt; array(
+			'id' =&gt; array(
+				'type' =&gt; 'INTEGER',
+				'auto' =&gt; true 
+			)
+		),
+		'links' =&gt; array(
+			'users' =&gt; array(
+				'class' =&gt; 'user',
+				'linkfields' =&gt; array(
+					'id' =&gt; 'group_id'
+				)
+			)
+		),
+		'foreignfields' =&gt; array(
+			'memberEmails' &gt; array(
+				'link' &gt; 'managers',
+				'field' &gt; 'email'
+			)
+		)
+	)
+}
+
+
+				</div>
+				<p>In this example, the user table has the additional field 'email'. 
+				also, the group class has a <em>foreignfields</em> definition that selects
+				the e-mail addresses of all members belonging to a given given class.<p>
+
+				<p>With that in place, we can now say:<p>
+				<div class="code">
+$myGroup = new group($id);
+$emails = $myGroup->memberEmails();
+				</div>
+				<p>And the "$emails" array now contains the email addresses of all user records connected to the selected group.</p>
+				</p>
+			</div>
 		</div>
 
 		<div id="staticfunctions" class="section">
@@ -889,12 +983,60 @@ userClass::deleteWherefirst_nameIn('Bob', 'Charlie', 'Dave');
 
 			<h3>retrieveAll()</h3>
 			<div class="indent">
-				Returns all records on the table.
+				Returns objects of all records on the table.
+			</div>
+
+			<h3>retrieveData(...)</h3>
+			<div class="indent">
+				<p>Returns an array of arrays, each containing data from the table.</p>
+				<p>This function accepts varying arguments, which can be any of the following.</p>
+
+				<ol>
+					<li>Nothing<br/>If no arguments are passed in, all fields are returned.</li>
+					<li>Field Names<br/>Field names can be passed in as individual arguments.  Aliases should be used if specified.</li>
+					<li>Array of Field Names<br>Same as specifying the field names, but in an array rather than separate arguments.</li>
+				</ol>
+				<p>Note that arrays can be nested, and the returned data will be flattened out in the process.  For example, if we pass in:<p>
+				<div class="code">
+array (
+	'alpha',
+	array(
+		'bravo',
+		'charlie',
+		array(
+			'delta',
+			'echo'
+		),
+		'foxtrot'
+		'golf'
+	),
+	array(
+		'hotel',
+		'india'
+	),
+	'juliet'
+)
+				</div>
+				<p>Then the resulting rows will come out as:</p>
+				<div class="code">
+array(
+	'alpha' =&gt; <em>value</em>,
+	'juliet' =&gt; <em>value</em>,
+	'bravo' =&gt; <em>value</em>,
+	'charlie' =&gt; <em>value</em>,
+	'foxtrot' =&gt; <em>value</em>,
+	'golf' =&gt; <em>value</em>,
+	'hotel' =&gt; <em>value</em>,
+	'india' =&gt; <em>value</em>,
+	'delta' =&gt; <em>value</em>,
+	'echo' =&gt; <em>value</em>,
+)
+				</div>
 			</div>
 
 			<h3>hasField($fieldName)</h3>
 			<div class="indent">
-				Verify whether or not the specified field name is a valid one.
+				Verify whether or not the specified field name exists.  Both field names and aliases are checked.
 			</div>
 
 			<h3>getByField($fieldName, $value)</h3>
@@ -911,6 +1053,19 @@ user::getByField('lastname', 'Smith');
 				will return exactly the same values.
 			</div>
 
+			<h3>importCSV($filename)</h3>
+			<div class="indent">
+				Imports a CSV file into the table.  The $filename pramateter should be the full
+				path and name of the file.  The fields are specified in the first row of the
+				file and can use either the actual field names, any aliases for them, or both.
+			</div>
+
+			<h3>query(&lt;SQL Query&gt;)</h3>
+			<div class="indent">
+				<strong>USE WITH CAUTION</strong><br/>
+				Perform a direct query on the database.  No safety check or scrubbing is done
+				on the query before executing it.
+			</div>
 
 			<h3>truncate($confirmation)</h3>
 			<div class="indent">
@@ -1003,7 +1158,7 @@ $group = group::getById($usr-&gt;getGroupId());
 				</p>
 			</div>
 
-			<h3>getField($name)</h3>
+			<h3>getField($field_name)</h3>
 			<div class="indent">
 				Returns the value of the specified field.  Note that this is
 				synonymous with "get&lt;field name&gt;()" and simply "&lt;field
@@ -1018,6 +1173,20 @@ $name = $user-&gt;getName();
 $name = $user-&gt;name();
 				</div>
 				<p>All three of the above examples return the same result.</p>
+			</div>
+
+			<h3>setField($field_name, $value)</h3>
+			<div class="indent">
+				Assigns the specified value to the given field.  This is exactly equivalent to "set&lt;field name&gt()"
+				<div class="code">
+$user->setField('email', 'example@example.foo');
+				</div>
+				<div class="code">
+$user->setEmail('example@example.foo');
+				</div>
+				<p>
+				Both of those examples assign 'example@example.foo' to the $user object's 'email' field.
+				</p>
 			</div>
 
 			<h3>__call($functionName, $params)</h3>
