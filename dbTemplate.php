@@ -76,9 +76,6 @@ the second item would add "`groupid` = $this->getField('id')";
 
  - ensure that all field flags are case-insensitive
 
- - change the maximum link field recursion depth to a defiend constant
-   somewhere, rather than a local hard-coded one.
-
  - refactor nested links to generate a single query to retrieve all related records
 
  - improve the static "search" function, adding a parameter which is an array
@@ -96,6 +93,7 @@ abstract class dbTemplate{
 	protected $_foreignfields;
 	protected $_mysqli;
 	static protected $mysqli;
+	const MAX_LINK_RECURSION = 10;
 
 	function __construct(){
 		$this->_initialize();
@@ -107,11 +105,6 @@ abstract class dbTemplate{
 		$numArgs = func_num_args();
 		$args = func_get_args();
 		$numExpectedArgs = count($this->_keys);
-//@@@@@@@@@@@@@@@@@!!!!!!!!!!  Undocumented!  We can now accept an array of
-//keys as a single construct parameter as well.  e.g. $foo = new bar(array(1, 2));
-//That's the same as $foo = new bar(1, 2);  This is used to allow easier
-//generic handling of data requests.
-
 
 // for future consideration.  As-is, this just takes the values passed in, and
 // passes them along to "load", which assumes those are the key fields, listed
@@ -463,7 +456,7 @@ abstract class dbTemplate{
 
 	// find the record(s) that this one links to based on the links
 	// $definition should be the array that defines the link.  This is passed in to allow for recursion
-	public function linkedRecords($definition, $maxRecursion = 10){
+	public function linkedRecords($definition, $maxRecursion = self::MAX_LINK_RECURSION){
 		if($maxRecursion <= 0){
 			throw new Exception("dbTemplate::linkedRecords: maximum recursion depth reached!");
 		}

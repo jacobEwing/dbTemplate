@@ -1385,9 +1385,64 @@ print_r($user-&gt;getData());
 
 		</div>
 
+		<div id="The Constructor" class="section">
+			<h2>The Constructor</h2>
+
+			<h3>Parameters</h3>
+			<div class="indent">
+				<p>When creating a new object of a dbTemplate extension, the following arguments can be used:</p>
+				<h4>None</h4>
+				<div class="indent">
+					<p>If no parameters are passed in, a blank or default record is returned.  Upon
+					saving that object, a new record is created in the database.</p>
+				</div>
+				<h4>Table Key(s)</h4>
+				<div class="indent">
+					<p>If the keys to a table are passed in, e.g.
+<div class="code">
+$myWidget = new widget($widgetId);
+</div>
+<div class="code">
+$link = new foobarLink($fooId, $barId);
+</div>
+					The matching record will be returned.  An exception will be thrown if no
+					record matches</p>
+				</div>
+				<h4>Table Key(s) as an Array</h4>
+				<div class="indent">
+					<p>Table keys can also be passed in as an array.  The array should be a simple
+					enumerated array.  e.g.
+<div class="code">
+$link = new foobarLink(array(1, 2));
+</div>
+				</div>
+			</div>
+
+			<h3>Flow</h3>
+			<div class="indent">
+				<p>The constructor goes through the following steps in order:</p>
+				<ol>
+					<li>_initialize()
+						<p>Loops through the $structure array defined in the child class, building the internal data from that.</p>
+					</li>
+					<li>_postInitialize()
+						<p>Massages the initialization specs, handling aliases, max string lengths, numeric limits, etc.</p>
+					</li>
+					<li>reset()
+						<p>Assigns default values to the record</p>
+					</li>
+					<li>Read and process parameters.</li>
+					<li>_onNewRecord()
+						<p>If this is a new record, and an _onNewRecord() function is defined in the class, call that function.</p>
+					</li>
+					
+				</ol>
+			</div>
+		</div>
+
 		<div id="notes" class="section">
 			<h2>Additional Notes</h2>
-			<h3>Conversion to string</h3>
+			<h4>Conversion to string</h4>
 			<p>
 				If converted to a string, any instance of dbTemplate will give a JSON encoded
 				dump of the data in the record.  For example, if a record has the fields "id",
