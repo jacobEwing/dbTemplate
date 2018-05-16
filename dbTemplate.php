@@ -1,6 +1,22 @@
 <?php
 /******
 
+FULL DOCUMENTATION available at:
+
+http://jacobewing.github.io/dbTemplate/
+
+This class is used for simplifying the handling of database records.  Any
+record can be retreived as an object, its values manipulated, etc.  Data is
+scrubbed in the dbTemplate class to prevent SQL injections when it gets saved.
+tl;dr: It's a simple ORM of sorts
+
+The general behavior is that static methods are performed on the table
+generally, and instance methods are applied to the records themselves.
+
+
+
+TODO::::
+
 In the record linking structure, add a "filterby" parameter, which adds a where condition on the link
 that could be like so:
 
@@ -22,12 +38,7 @@ the second item would add "`groupid` = $this->getField('id')";
 */
 
 
-// This class is used for simplifying the handling of database records.  Any
-// record can be retreived as an object, its values manipulated, etc.  Data is
-// scrubbed in the dbTemplate class to prevent SQL injections when it gets saved.
-// tl;dr: It's a simple ORM of sorts
 /*
-TODO::::
 
  - !! Really need to re-structure the way results are handled.  I think results
    need to be a class of their own.  They could store a 2d array of key values,
@@ -62,9 +73,6 @@ TODO::::
     Hm - so yeah.  It might just be a way of changing my way of thinking of
     what a record represents.  All of the functionality that's there now can be
     applied the same way, but also to multiple records if we have those.
-
- - Add an error checking on construct that throws an exception if an alias is
-   identical to another field name.
 
  - ensure that all field flags are case-insensitive
 
@@ -282,10 +290,14 @@ abstract class dbTemplate{
 		$aliasMap = array();
 		foreach($className::$structure['fields'] as $fName => $fData){
 			if(array_key_exists('alias', $fData)){
-				$aliasMap[strtolower($fData['alias'])] = $fName;
+				$aliasKey = strtolower($fData['alias']);
 			}else{
-				$aliasMap[strtolower($fName)] = $fName;
+				$aliasKey = strtolower($fName);
 			}
+			if(array_key_exists($aliasKey, $aliasMap)){
+				throw new Exception("dbTemplate::getAliasMap: duplicate field or alias \"$aliasKey\"");
+			}
+			$aliasMap[$aliasKey] = $fName;
 		}
 
 		return $className::$structure['aliasMap'] = $aliasMap;
