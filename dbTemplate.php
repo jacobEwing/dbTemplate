@@ -261,12 +261,11 @@ abstract class dbTemplate{
 		$tableName = $className::$structure['name'];
 
 		if(
-			is_array($confirmation) 
-			&& count($confirmation) == 1 
+			is_array($confirmation)
+			&& count($confirmation) == 1
 			&& key($confirmation) == 'confirm'
 			&& $confirmation['confirm'] === true
 		){
-			
 			dbTemplate::query('TRUNCATE TABLE ' . $tableName);
 		}else{
 			throw new Exception($className . '::truncate($confirmation) requires one parameter, which should be an array with a single key => value pair.  The key must be the string "confirm", and the value must be true (not a value that evaluates as true, but the actual value true).  Use with caution.');
@@ -322,6 +321,12 @@ abstract class dbTemplate{
 					$rval = date('Y-m-d H:i:s', $timeStamp < 1 ? 1 : $timeStamp);
 				}
 				break;
+			case 'DATETIME':
+				if($value == 0) $rval = null;
+				if($value != null){
+					$rval = date('Y-m-d H:i:s', strtotime($value));
+				}
+				break;
 			case 'DECIMAL':
 				if(array_key_exists('rounding', $fieldDef)){
 					$digits = intval($fieldDef['rounding']);
@@ -336,16 +341,19 @@ abstract class dbTemplate{
 			case 'BOOLEAN':
 				$rval = $value ? 1 : 0;
 				break;
-			case 'VARCHAR': case 'TEXT': case 'DATE': case 'TIME': case 'DATETIME':
-				$rval = dbTemplate::$mysqli->real_escape_string($value);
+			case 'VARCHAR': case 'TEXT': case 'DATE': case 'TIME':
+				$rval = dbTemplate::$mysqli->real_escape_string(mb_convert_encoding($value, 'UTF-8'));
 				break;
 			case 'ENUM':
 				if(in_array($value, $fieldDef['values'])){
 					$rval = dbTemplate::$mysqli->real_escape_string($value);
 				}
 				break;
+			case 'JSON':
+				$rval = dbTemplate::$mysqli->real_escape_string(mb_convert_encoding(json_encode($value), 'UTF-8'));
+				break;
 			default:
-				$rval = dbTemplate::$mysqli->real_escape_string($value);
+				$rval = dbTemplate::$mysqli->real_escape_string(mb_convert_encoding($value, 'UTF-8'));
 		}
 
 		if(array_key_exists('unsigned', $fieldDef)){
@@ -452,6 +460,23 @@ abstract class dbTemplate{
 			throw new Exception("dbTemplate::$funcName is not defined.");
 		}
 		return $rval;
+	}
+
+	// NOT DOCUMENTED  Does some basic scrubbing on a record object
+	public function __clone(){
+		foreach($this->_keys as $key){
+			$this->resetField($key);
+		}
+		$this->_isNewRecord = true;
+	}
+
+	// NOT DOCUMENTED Resets the value of the specified field back to its default value
+	public function resetField($fieldname){
+		if(!array_key_exists($fieldname, $this->_fields)){
+			throw new Exception("dbTemplate::resetField: Invalid field name " . $fieldname);
+		}
+		$fData = $this->_fields[$fieldname];
+		$this->_data[$fieldname] = array_key_exists('default', $fData) ? $fData['default'] : null;
 	}
 
 	// find the record(s) that this one links to based on the links
@@ -641,7 +666,12 @@ abstract class dbTemplate{
 				// an undefined function.  It may give infinite recursion as a result.
 				return $this->{$this->_fields[$thisField]['sethandler']}($value);
 			}else{
-				if($value === null) return $value;
+				if($value === null){
+					if(array_key_exists('notnull', $this->_fields[$thisField])){
+						throw new Exception("NULL value not allowed for field $field");
+					}
+					return $value;
+				}
 				// validate ENUMS
 				if($this->_fields[$thisField]['type'] == 'enum'){
 					if(!in_array($value, $this->_fields[$thisField]['values'])){
@@ -739,6 +769,7 @@ abstract class dbTemplate{
 			}
 			$query .= " (`" . implode('`, `', $fieldList) . "`)";
 			$query .= " VALUES (" . implode(", ", $valueList) . ")";
+
 			if(!$this->query($query)){
 				throw new Exception("Unable to create new record: " . $this->_mysqli->error . "\n" . $query . "\n");
 			}
@@ -845,7 +876,11 @@ abstract class dbTemplate{
 		if($row){
 			$this->_isNewRecord = false;
 			foreach($this->_fields as $fName => $fData){
-				$this->_data[$fName] = $row[$fName];
+				if(strtoupper(trim($fData['type'])) == 'JSON'){
+					$this->_data[$fName] = json_decode(utf8_decode($row[$fName]));
+				}else{
+					$this->_data[$fName] = $row[$fName];
+				}
 			}
 		}else{
 			$this->reset();
@@ -873,6 +908,10 @@ abstract class dbTemplate{
 					throw new Exception('dbTemplate::setData: Invalid field alias "' . $field . '".');
 				}
 				$functionName = "set" . $field;
+			}
+
+			if(strtoupper(trim($this->_fields[$field]['type'])) == 'JSON'){
+				$value = json_decode(utf8_decode($value));
 			}
 
 			try{
@@ -1170,6 +1209,11 @@ abstract class dbTemplate{
 	public static function query($query){
 		$rval = dbTemplate::$mysqli->query($query);
 		return $rval;
+	}
+
+//@@@@@@@@@@@@@ NOT DOCUMENTED!  scrubs any string passed in @@@@@@@@@@@@@@@@
+	public static function scrubString($string){
+		return dbTemplate::$mysqli->real_escape_string($string);
 	}
 
 	public static function getInstance(){
